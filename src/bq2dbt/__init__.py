@@ -1,2 +1,3 @@
-def main() -> None:
-    print("Hello from dbt-view-importer!")
+"""BigQuery View to dbt Model Converter package."""
+
+__version__ = "0.1.0"
