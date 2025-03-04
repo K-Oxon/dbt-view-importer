@@ -1,0 +1,217 @@
+---
+description: all-on-one project rules
+globs: 
+alwaysApply: true
+---
+
+# Rule content
+
+## Project structure
+- ソースコードは必ず `project_root/src/package_name/` ディレクトリ内に配置する
+- エントリーポイントは `src/package_name/cli.py` または `src/package_name/__main__.py` に定義
+- 関連するコマンドは `src/package_name/commands/` ディレクトリ内にグループ化
+- インターフェース（CLI定義）とビジネスロジックを分離する
+- 設定管理は専用の `src/package_name/config.py` に実装
+- ユーティリティ関数は `src/package_name/utils/` ディレクトリにモジュール化
+- テストは `tests/` ディレクトリに配置し、ソースと同じ構造をミラーリング
+
+```
+project_root/
+├── .git/
+├── .github/
+│   └── workflows/
+│       └── ci.yml           # CI設定
+├── .gitignore
+├── .pre-commit-config.yaml  # pre-commitフック設定
+├── CHANGELOG.md
+├── LICENSE
+├── README.md
+├── docs/
+│   ├── architecture.md      # アーキテクチャドキュメント
+│   └── usage.md             # 使用方法
+├── pyproject.toml           # プロジェクト設定
+├── src/
+│   └── package_name/        # 実際のパッケージ
+│       ├── init.py      # バージョン情報
+│       ├── main.py      # モジュールとして実行するためのエントリポイント
+│       ├── cli.py           # メインCLIエントリポイント
+│       ├── commands/        # コマンド実装
+│       │   ├── init.py
+│       │   └── command1.py
+│       ├── config.py        # 設定管理
+│       └── utils/           # ユーティリティ関数
+│           ├── init.py
+│           └── helpers.py
+└── tests/
+    ├── init.py
+    ├── conftest.py          # テスト共通設定
+    ├── test_cli.py          # CLIテスト
+    └── commands/            # コマンド単体テスト
+    └── test_command1.py
+```
+
+## Python rules
+
+### 依存関係管理規則
+
+- Use `uv`
+- パッケージ管理には uv を使用する
+- すべての依存関係は `pyproject.toml` に明示的に記述する
+- 依存関係はバージョン制約を明確に指定する（例: `package>=2.1.0,<3.0.0`）
+- 開発依存関係は `[project.optional-dependencies]` セクションに記述
+- 本番環境のみに使用する依存関係は必要最小限に維持する
+- サードパーティライブラリの導入前に以下を考慮する:
+  - 積極的にメンテナンスされているか
+  - ドキュメントが十分か
+  - ライセンスは適切か
+  - 依存関係の数は妥当か
+
+### コード規則
+
+- すべての関数、クラス、メソッドに型ヒントを付ける
+- docstringは Google スタイルで記述（Args, Returns, Raises セクションを含む）
+- 関数は純粋関数型を優先し、副作用を最小限に抑える
+- 長い関数（25行以上）は小さな関数に分割する
+- 複雑な条件式は名前付き述語関数に抽出する
+- グローバル変数の使用を避ける
+- すべての定数は大文字のスネークケースで定義（例: `MAX_RETRY_COUNT`）
+- click のコマンドとオプションには常に明示的な help テキストを提供する
+- リッチなターミナル出力には rich ライブラリを使用する
+
+### CLI 設計規則
+
+- コマンド名は短く、明確で、一貫性のある名詞または動詞にする
+- サブコマンドは論理的に関連したグループに整理する
+- すべてのコマンドは単一責任の原則に従う
+- 共通オプションは親コマンドに定義する
+- 必須オプションは引数として定義する
+- ユーザー設定は優先順位を持つ複数の場所から読み込む:
+  1. コマンドラインフラグ
+  2. 環境変数
+  3. 設定ファイル
+  4. デフォルト値
+- バージョン情報は `--version` フラグで確認できるようにする
+- 冗長モード（`--verbose`）とクワイエットモード（`--quiet`）を提供する
+
+### エラー処理規則
+
+- すべてのユーザーエラーには明確で実用的なエラーメッセージを表示する
+- 内部エラーはロギングし、ユーザーにはシンプルなメッセージを表示
+- コマンドの戻り値は常に整数の終了コードとする（成功: 0, 失敗: 1以上）
+- グローバルな例外ハンドラーを実装して未処理の例外をキャッチする
+- エラーメッセージには問題解決のためのヒントを含める
+- 致命的でないエラーからは可能な限り回復を試みる
+- ネットワーク操作やファイルI/Oには適切なタイムアウトとリトライ戦略を実装
+
+### テスト規則
+
+- すべての公開APIに単体テストを書く
+- コマンドラインインターフェースの結合テストを実装する
+- テスト用の依存関係には pytest, pytest-mock, pytest-cov を使用する
+- モックとフィクスチャを活用して外部依存を分離する
+- CLIコマンドのテストには click.testing.CliRunner を使用する
+- カバレッジ目標は最低80%以上
+- テスト実行は CI/CD パイプラインに統合する
+- 境界条件と異常系のテストケースを含める
+
+### パッケージング規則
+
+- pyproject.toml を使用して最新のパッケージングメタデータを定義する
+- パッケージは hatchling を使用してビルドする
+- CLIのエントリーポイントは [project.scripts] セクションで定義
+- ライブラリのAPIドキュメントは src/package_name/README.md に記述
+- パッケージはセマンティックバージョニングに従う
+- プロジェクトルートに CHANGELOG.md を維持する
+- インストールされるファイルは source distribution と wheel の両方で確認する
+
+### ドキュメント規則
+
+- ユーザー向けドキュメントは docs/ ディレクトリに配置
+- README.md には最低限以下を含める:
+  - インストール手順
+  - 基本的な使用例
+  - 主な機能の概要
+  - 貢献のためのガイドライン
+- 各コマンドの詳細なヘルプテキストを提供
+- コードベースに関するアーキテクチャドキュメントを docs/architecture.md に記述
+- APIリファレンスは自動生成ツール（sphinx など）を使用
+
+### 品質管理規則
+
+- lint ツールとして flake8, black, isort, mypy を使用する
+- pre-commit フックでコミット前の自動チェックを実行
+- 複雑度が高い関数（循環的複雑度 > 10）はリファクタリングする
+- すべての警告を解消するか、明示的に無視する理由をコメントで説明
+- CI でビルド、テスト、lint の自動チェックを実行
+- セキュリティスキャンツール（bandit など）を定期的に実行
+
+### pyproject.toml example
+
+```toml
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "your-cli-tool"
+version = "0.1.0"
+description = "CLI tool description"
+authors = [{name = "Your Name", email = "your.email@example.com"}]
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+]
+dependencies = [
+    "click>=8.1.0,<9.0.0",
+    "rich>=12.0.0,<13.0.0",
+    "pyyaml>=6.0,<7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0,<8.0.0",
+    "pytest-cov>=4.0.0,<5.0.0",
+    "black>=23.0.0,<24.0.0",
+    "isort>=5.10.0,<6.0.0",
+    "mypy>=1.0.0,<2.0.0",
+    "flake8>=6.0.0,<7.0.0",
+    "pre-commit>=3.0.0,<4.0.0",
+]
+
+[project.scripts]
+your-cli = "package_name.cli:main"
+
+[tool.black]
+line-length = 88
+target-version = ["py38"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+```
+
+## 中間文書について
+
+あなたは思考の過程やタスクの整理などを必要に応じてmarkdownに出力することで、いつでも思考やタスクを再開できます。
+`docs/ai/_memory.md`を使い、テキストとして保存したり、読み込んだりできます。
+

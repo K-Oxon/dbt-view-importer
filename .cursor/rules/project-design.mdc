@@ -1,0 +1,292 @@
+---
+description: This project background and design
+globs: 
+alwaysApply: true
+---
+
+# About this project and design
+
+## Project background
+
+現在のデータ環境では、多くの組織が BigQuery のビューを手作業で dbt モデルに変換しています。これは時間がかかり、エラーが発生しやすい作業です。特に他のチームが作成した ad hoc なビューを dbt に取り込むことは困難です。この課題を解決するため、変換プロセスを自動化する CLI ツール「bq2dbt」を開発します。
+このツールは、指定した BigQuery データセット内のビューを検出し、それらを適切な dbt モデル（SQL ファイルと YAML ファイル）に変換します。また、ビュー間の依存関係も解析し、参照を適切な dbt の ref() 関数に変換します。
+
+## Project design
+
+### 目的
+
+BigQuery ビューから dbt モデルへの変換プロセスを自動化
+dbt 開発の初速を向上させる
+データエンジニアの作業効率を高める
+変換プロセスの一貫性を確保する
+
+### 主要機能
+
+ビュー検出と取得: 指定したデータセット内のすべてのビューを取得
+依存関係分析: BigQuery Data Lineage API を使用してビュー間の依存関係を分析
+dbt モデル生成: 適切なファイル名規則に従って SQL モデルと YAML ファイルを生成
+参照変換: BigQuery テーブル参照を dbt の ref() 関数に変換
+インタラクティブな確認: 依存関係のあるビューやファイル上書きについてユーザーに確認
+
+### 技術的アプローチ
+
+依存関係解決
+依存関係の解析には主に BigQuery の Data Lineage API を使用します。このアプローチには以下のメリットがあります：
+
+複雑な SQL を正確に解析できる
+WITH 句、UDF、UDTF などの BigQuery 特有の構文も正しく処理できる
+SQL パーサーを自作する複雑さを回避できる
+
+### ユーザーインターフェース
+
+Rich ライブラリを使用したプログレス表示とインタラクティブなプロンプト
+ログファイルの自動保存と表示機能
+Dry-run モードによる変換シミュレーション
+
+### プロジェクト構造
+
+```
+bq2dbt/
+├── .git/
+├── .gitignore
+├── README.md
+├── pyproject.toml
+├── tests/
+│   ├── __init__.py
+│   ├── conftest.py
+│   ├── test_cli.py
+│   └── test_converter.py
+└── src/
+    └── bq2dbt/
+        ├── __init__.py
+        ├── __main__.py
+        ├── cli.py
+        ├── commands/
+        │   ├── __init__.py
+        │   ├── import_cmd.py
+        │   └── logs_cmd.py
+        ├── converter/
+        │   ├── __init__.py
+        │   ├── bigquery.py
+        │   ├── dependency.py
+        │   └── generator.py
+        ├── templates/
+        │   ├── __init__.py
+        │   ├── model.sql
+        │   └── model.yml
+        └── utils/
+            ├── __init__.py
+            ├── logger.py
+            └── naming.py
+```
+
+### コマンドライン構造
+
+bq2dbt --help コマンド出力イメージ
+
+```
+bq2dbt - BigQuery View to dbt Model Converter
+
+Usage:
+  bq2dbt [command] [options]
+
+Commands:
+  import      Import BigQuery views and convert to dbt models
+  logs        Display conversion logs
+  version     Show version information
+
+General Options:
+  -h, --help     Show this help message
+  -v, --version  Show version information
+
+Import Command:
+  bq2dbt import --dataset DATASET_ID --output-dir OUTPUT_DIR [options]
+
+  Required Arguments:
+    --project_id PROJECT_ID   BigQuery project ID to import views from
+    --dataset DATASET_ID      BigQuery dataset ID to import views from
+    --output-dir OUTPUT_DIR   Directory to output dbt models (e.g., models/staging)
+
+  Naming Options:
+    --naming-preset PRESET    Naming convention to use for model files:
+                              - 'dataset_prefix': Uses the dataset prefix (default)
+                                e.g., dm_foobar.table_name -> foobar__table_name.sql
+                              - 'table_only': Uses just the table name
+                                e.g., dm_foobar.table_name -> table_name.sql
+                              - 'full': Uses dataset and table name
+                                e.g., dm_foobar.table_name -> dm_foobar__table_name.sql
+
+  Filtering Options:
+    --non-interactive         Disable interactive prompts for dependency imports
+                              and file overwrites (default: interactive mode enabled)
+    --include-views PATTERN   Glob pattern(s) of views to include, comma-separated
+                              e.g., "report_*,mart_*"
+    --exclude-views PATTERN   Glob pattern(s) of views to exclude, comma-separated
+                              e.g., "temp_*,test_*"
+    --exclude-datasets IDS    Dataset IDs to exclude, comma-separated
+                              e.g., "common,utility"
+
+  Template Options:
+    --sql-template PATH       Template file for SQL model content including
+                              config blocks (default: built-in template)
+    --yml-template PATH       Template file for YAML model content including
+                              meta fields (default: built-in template)
+
+  Execution Options:
+    --dry-run                 Show what would be converted without writing files
+    --no-lineage-api          Don't use Data Lineage API (uses Information Schema only)
+
+Logs Command:
+  bq2dbt logs [options]
+
+  Options:
+    --last       Show only the most recent log
+    --limit N    Show N most recent logs (default: 5)
+
+Examples:
+  # Basic import of a dataset
+  bq2dbt import --dataset my_dataset --output-dir models/staging
+
+  # Import with custom view filtering
+  bq2dbt import --dataset my_dataset --output-dir models/staging --include-views "report_*" --exclude-views "temp_*"
+
+  # Import with custom templates
+  bq2dbt import --dataset my_dataset --output-dir models/staging --sql-template templates/model.sql --yml-template templates/model.yml
+
+  # Non-interactive batch mode
+  bq2dbt import --dataset my_dataset --output-dir models/staging --non-interactive
+
+  # Simulation mode
+  bq2dbt import --dataset my_dataset --output-dir models/staging --dry-run
+
+  # View recent conversion logs
+  bq2dbt logs --last
+```
+
+実装の詳細
+主要クラスと責務
+
+BigQueryClient
+
+データセットからビュー一覧を取得
+各ビューの定義を取得
+Lineage API を使用して依存関係を取得
+
+
+DependencyResolver
+
+ビュー間の依存関係を解析
+参照グラフを構築
+変換順序を決定（トポロジカルソート）
+
+
+ModelGenerator
+
+ビュー定義から dbt モデルを生成
+参照を ref() 関数に変換
+テンプレートを適用
+
+
+NamingResolver
+
+ビュー名から dbt モデルのファイル名を生成
+命名プリセットを適用
+
+
+ImportCommand
+
+CLI パラメータを処理
+変換プロセスを調整
+インタラクティブな確認を管理
+
+
+
+変換プロセスフロー
+
+1. 初期化フェーズ
+
+コマンドラインオプションを解析
+BigQuery 接続を確立
+出力ディレクトリを確認
+
+
+2. 検出フェーズ
+
+データセットからビュー一覧を取得
+パターンベースのフィルタリングを適用
+
+
+3. 分析フェーズ
+
+各ビューの定義を取得
+依存関係を分析
+変換順序を決定
+
+
+4. インタラクティブフェーズ (インタラクティブモード時)
+
+依存関係のあるビューについて確認
+既存ファイルの上書きについて確認
+
+
+5. 生成フェーズ
+
+SQL ファイルを生成
+YAML ファイルを生成
+ファイルを出力ディレクトリに書き込み
+
+
+6. レポートフェーズ
+
+変換結果を表示
+ログを保存
+
+### テンプレート
+
+デフォルト SQL テンプレート
+```jinja
+{{
+    config(
+        materialized='view'
+    )
+}}
+
+-- Original BigQuery view: {{ source_view }}
+-- Generated by bq2dbt at {{ timestamp }}
+
+{{ sql_definition }}
+```
+
+デフォルト YAML テンプレート
+```jinja
+version: 2
+
+models:
+  - name: {{ model_name }}
+    description: >
+      {{ description | default('') }}
+    columns:
+{% for column in columns %}
+      - name: {{ column.name }}
+        description: >
+          {{ column.description | default('') }}
+{% endfor %}
+```
+
+### 対応させる環境
+
+python3.9以上の動作を保証すること
+
+### 依存ライブラリ
+
+click: コマンドラインインターフェース
+rich: ターミナル出力の強化
+google-cloud-bigquery: BigQuery アクセス
+jinja2: テンプレートエンジン
+pyyaml: YAML ファイル処理
+
+### 開発ライフサイクル
+
+フェーズ 1: コア機能 - ビュー取得・変換・保存
+フェーズ 2: 依存関係解析と ref() 変換
+フェーズ 3: UI/UX 強化とエラーハンドリング
