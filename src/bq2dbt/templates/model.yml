@@ -2,11 +2,11 @@ version: 2
 
 models:
   - name: {{ model_name }}
-    description: >
+    description: |
       {{ description | default('') }}
     columns:
-{% for column in columns %}
+{%- for column in columns %}
       - name: {{ column.name }}
-        description: >
+        description: |
           {{ column.description | default('') }}
-{% endfor %} 
+{%- endfor %} 
