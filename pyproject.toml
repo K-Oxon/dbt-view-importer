@@ -49,6 +49,4 @@ disallow_untyped_defs = true
 disallow_incomplete_defs = true
 
 [dependency-groups]
-dev = [
-    "pytest>=7.4.4",
-]
+dev = ["pytest>=7.4.4"]

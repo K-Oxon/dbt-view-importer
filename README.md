@@ -36,11 +36,25 @@ uv run bq2dbt [コマンド] [オプション]
 
 #### ビューのインポート
 
+必須項目のみ
+
 ```bash
 uv run bq2dbt import views \
   --project-id <PROJECT_ID> \
   --dataset <DATASET_ID> \
   --output-dir <OUTPUT_DIR>
+```
+
+全部入り
+
+```bash
+bq2dbt import views \
+  --project-id <PROJECT_ID> \
+  --dataset <DATASET_ID> \
+  --output-dir <OUTPUT_DIR> \
+  --naming-preset dataset_prefix \
+  --sql-template <template_file> \
+  --yml-template <template_file>
 ```
 
 #### ログの表示

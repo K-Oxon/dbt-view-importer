@@ -6,6 +6,22 @@ alwaysApply: true
 
 # Rule content
 
+## Use uv
+
+pythonのpackage管理には`uv`を使うこと
+
+例:
+```bash
+# libraly install
+uv add pandas
+uv add --dev pytest
+
+# run my module
+uv run python -m my_module_name
+```
+
+uvのdocsを参照し、ベストプラクティスに則って使用すること
+
 ## Project structure
 - ソースコードは必ず `project_root/src/package_name/` ディレクトリ内に配置する
 - エントリーポイントは `src/package_name/cli.py` または `src/package_name/__main__.py` に定義
