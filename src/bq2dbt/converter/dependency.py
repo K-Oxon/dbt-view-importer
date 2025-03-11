@@ -5,7 +5,7 @@ BigQueryビュー間の依存関係を解析し、変換順序を決定します
 
 import logging
 from collections import defaultdict, deque
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 from rich.console import Console
 from rich.table import Table
@@ -34,13 +34,18 @@ class DependencyResolver:
         logger.debug("依存関係リゾルバーを初期化しました")
 
     def analyze_dependencies(
-        self, views: List[str], target_dataset_id: str
+        self,
+        views: List[str],
+        target_dataset_id: str,
+        status_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> Tuple[List[str], Dict[str, List[str]]]:
         """指定されたビューリストの依存関係を解析し、変換に必要なビューリストを作成します。
 
         Args:
             views: 分析対象のビューのリスト（project.dataset.table形式）
             target_dataset_id: 変換対象のデータセットID
+            status_callback: 処理状況を通知するコールバック関数。
+                             引数は (現在処理中のビュー, 処理済みビュー数, 全ビュー数)
 
         Returns:
             (拡張されたビューリスト, 依存関係グラフ)のタプル
@@ -66,6 +71,10 @@ class DependencyResolver:
             # 未処理のビューを1つ取得
             view = next(iter(required_views - processed_views))
 
+            # 処理状況をコールバックで通知（コールバックが指定されている場合）
+            if status_callback:
+                status_callback(view, len(processed_views), len(required_views))
+
             try:
                 # ビューの依存関係を取得
                 dependencies = self.bq_client.get_table_dependencies(view)
@@ -89,6 +98,10 @@ class DependencyResolver:
                 # エラーが発生したビューは依存関係がないものとして処理
                 self.dependency_graph[view] = []
                 processed_views.add(view)
+
+        # 最終状態をコールバックで通知
+        if status_callback:
+            status_callback("完了", len(processed_views), len(required_views))
 
         # セットをリストに変換
         result_views = list(required_views)
