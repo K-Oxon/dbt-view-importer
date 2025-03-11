@@ -59,7 +59,7 @@ class BigQueryClient:
               table_name
         """
 
-        query_job = self.client.query(query)
+        query_job = self.client.query(query, location=self.location)
         rows = list(query_job)
 
         # パターンフィルタリングを適用
@@ -138,7 +138,7 @@ class BigQueryClient:
             """
 
             # クエリを実行
-            rows = list(self.client.query(query))
+            rows = list(self.client.query(query, location=self.location))
 
             if not rows:
                 raise ValueError(f"ビューが見つかりません: {fully_qualified_name}")
