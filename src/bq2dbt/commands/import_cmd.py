@@ -66,6 +66,16 @@ def import_cmd() -> None:
     help="YAMLモデル用のカスタムテンプレートファイル",
 )
 @click.option(
+    "--include-dependencies",
+    is_flag=True,
+    help="データセット外の依存ビューも含める",
+)
+@click.option(
+    "--location",
+    default="asia-northeast1",
+    help="Google Cloudのロケーション（デフォルト: asia-northeast1）",
+)
+@click.option(
     "--debug", is_flag=True, help="デバッグモードを有効化（詳細なエラー情報を表示）"
 )
 @click.pass_context
@@ -81,25 +91,40 @@ def import_views(
     non_interactive: bool,
     sql_template: Optional[str],
     yml_template: Optional[str],
+    include_dependencies: bool,
+    location: str,
     debug: bool,
 ) -> None:
-    """BigQueryビューをdbtモデルにインポートする。"""
+    """BigQueryビューをdbtモデルにインポートします。
+
+    Args:
+        ctx: クリックコンテキスト
+        project_id: BigQueryプロジェクトID
+        dataset: インポート元のBigQueryデータセットID
+        output_dir: dbtモデルの出力先ディレクトリ
+        naming_preset: ファイル名の命名規則
+        dry_run: 実際にファイルを生成せずにシミュレーションを実行するかどうか
+        include_views: インポートするビューのパターン（カンマ区切り）
+        exclude_views: インポートから除外するビューのパターン（カンマ区切り）
+        non_interactive: インタラクティブモードを無効化するかどうか
+        sql_template: SQLモデル用のカスタムテンプレートファイル
+        yml_template: YAMLモデル用のカスタムテンプレートファイル
+        include_dependencies: データセット外の依存ビューも含めるかどうか
+        location: Google Cloudのロケーション
+        debug: デバッグモードを有効化するかどうか
+    """
     # ロガーの設定
-    verbose = ctx.obj.get("VERBOSE", False)
-    logger = setup_logging(verbose=verbose)
+    logger = setup_logging(verbose=debug)
     console = Console()
 
-    # インポート開始メッセージ
-    console.print("[bold green]BigQueryビューのインポートを開始します...[/bold green]")
-
-    # 設定情報をログに出力
-    logger.info(f"プロジェクトID: {project_id}")
-    logger.info(f"データセット: {dataset}")
-    logger.info(f"出力ディレクトリ: {output_dir}")
+    logger.info(f"BigQueryビューのインポートを開始します: {project_id}.{dataset}")
+    logger.info(f"出力先: {output_dir}")
     logger.info(f"命名規則: {naming_preset}")
     logger.info(f"インタラクティブモード: {'無効' if non_interactive else '有効'}")
     logger.info(f"ドライラン: {'有効' if dry_run else '無効'}")
     logger.info(f"デバッグモード: {'有効' if debug else '無効'}")
+    logger.info(f"依存ビューのインポート: {'有効' if include_dependencies else '無効'}")
+    logger.info(f"ロケーション: {location}")
 
     # フィルターパターンの初期化
     include_patterns = None
@@ -133,7 +158,7 @@ def import_views(
             transient=True,
         ) as progress:
             task = progress.add_task("BigQueryに接続しています...", total=None)
-            bq_client = BigQueryClient(project_id)
+            bq_client = BigQueryClient(project_id, location=location)
 
         # ビュー一覧の取得
         with Progress(
@@ -182,8 +207,48 @@ def import_views(
             # 依存関係リゾルバーの初期化
             resolver = DependencyResolver(bq_client)
 
-            # 依存関係グラフの構築
-            resolver.build_dependency_graph(views)
+            # 依存関係を含むビューリストの作成
+            if include_dependencies:
+                # 新しい解析メソッドを使用して依存関係を分析
+                all_views, dependency_graph = resolver.analyze_dependencies(
+                    views, dataset
+                )
+
+                # 新しく追加されたビューがあるか確認
+                added_views = [v for v in all_views if v not in views]
+
+                if added_views:
+                    console.print(
+                        f"[yellow]依存関係により{len(added_views)}個のビューが追加されました。[/yellow]"
+                    )
+
+                    # 追加されたビューの表示
+                    added_table = Table(title="依存関係により追加されたビュー")
+                    added_table.add_column("No.", style="cyan")
+                    added_table.add_column("ビュー名", style="yellow")
+
+                    for i, view in enumerate(added_views, 1):
+                        added_table.add_row(str(i), view)
+
+                    console.print(added_table)
+
+                    # インタラクティブモードでの確認
+                    if not non_interactive:
+                        if not Confirm.ask("これらの依存ビューも含めますか？"):
+                            all_views = views
+                            console.print("[red]依存ビューを除外します。[/red]")
+                else:
+                    console.print(
+                        "[green]依存関係の解析：追加のビューはありません。[/green]"
+                    )
+            else:
+                # 依存関係の解析を行うが、追加のビューは含めない
+                resolver.build_dependency_graph(views)
+                all_views = views
+
+            # 依存関係の視覚的表示
+            console.print("[bold]ビュー間の依存関係:[/bold]")
+            resolver.display_dependencies(all_views, console=console)
 
             try:
                 # 変換順序の取得
@@ -191,7 +256,23 @@ def import_views(
                 logger.info(f"ビューの変換順序を決定しました: {len(ordered_views)}個")
             except ValueError as e:
                 logger.warning(f"依存関係の分析中にエラーが発生しました: {e}")
-                ordered_views = views  # エラーが発生した場合は元の順序を使用
+                ordered_views = all_views  # エラーが発生した場合は元の順序を使用
+
+            # ビューの変換順序を表示
+            order_table = Table(title="ビューの変換順序")
+            order_table.add_column("順序", style="cyan")
+            order_table.add_column("ビュー名", style="green")
+
+            for i, view in enumerate(ordered_views, 1):
+                order_table.add_row(str(i), view)
+
+            console.print(order_table)
+
+            # インタラクティブモードでの確認
+            if not non_interactive:
+                if not Confirm.ask("この順序でビューを変換しますか？"):
+                    console.print("[red]変換をキャンセルします。[/red]")
+                    return
 
         # モデルジェネレーターの初期化
         sql_template_path = Path(sql_template) if sql_template else None

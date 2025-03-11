@@ -4,9 +4,10 @@ BigQueryのビュー取得と定義取得を行うクライアントを提供し
 """
 
 import logging
+import re
 from typing import Dict, List, Optional
 
-from google.cloud import bigquery
+from google.cloud import bigquery, datacatalog_lineage_v1
 
 logger = logging.getLogger(__name__)
 
@@ -14,15 +15,20 @@ logger = logging.getLogger(__name__)
 class BigQueryClient:
     """BigQuery APIとの通信を行うクライアントクラス。"""
 
-    def __init__(self, project_id: str):
+    def __init__(self, project_id: str, location: str = "asia-northeast1"):
         """BigQueryクライアントを初期化します。
 
         Args:
             project_id: BigQueryプロジェクトID
+            location: Google Cloudのロケーション（デフォルト: asia-northeast1）
         """
         self.project_id = project_id
+        self.location = location
         self.client = bigquery.Client(project=project_id)
-        logger.debug(f"BigQueryクライアントを初期化しました: プロジェクト={project_id}")
+        self.lineage_client = datacatalog_lineage_v1.LineageClient()
+        logger.debug(
+            f"BigQueryクライアントを初期化しました: プロジェクト={project_id}, ロケーション={location}"
+        )
 
     def list_views(
         self,
@@ -98,8 +104,6 @@ class BigQueryClient:
         Returns:
             マッチする場合はTrue、しない場合はFalse
         """
-        import re
-
         # *をワイルドカードとして扱い、正規表現に変換
         regex_pattern = pattern.replace("*", ".*")
         return bool(re.match(f"^{regex_pattern}$", text))
@@ -114,35 +118,46 @@ class BigQueryClient:
             ビューのSQL定義
 
         Raises:
-            ValueError: ビューが存在しない場合
+            ValueError: ビューが存在しない場合、またはアクセスできない場合
         """
         parts = fully_qualified_name.split(".")
         if len(parts) != 3:
-            raise ValueError(f"無効なビュー名: {fully_qualified_name}")
+            raise ValueError(f"無効なビュー名形式です: {fully_qualified_name}")
 
-        project_id, dataset_id, view_name = parts
-        logger.debug(f"ビュー定義を取得します: {fully_qualified_name}")
+        project_id, dataset_id, view_id = parts
 
-        # Information Schemaからビュー定義を取得
-        query = f"""
-            SELECT
-              view_definition
-            FROM
-              `{project_id}.{dataset_id}.INFORMATION_SCHEMA.VIEWS`
-            WHERE
-              table_name = '{view_name}'
-        """
+        try:
+            # ビュー定義を取得するクエリ
+            query = f"""
+                SELECT
+                  view_definition
+                FROM
+                  `{project_id}.{dataset_id}.INFORMATION_SCHEMA.VIEWS`
+                WHERE
+                  table_name = '{view_id}'
+            """
 
-        query_job = self.client.query(query)
-        rows = list(query_job)
+            # クエリを実行
+            rows = list(self.client.query(query))
 
-        if not rows:
-            raise ValueError(f"ビューが存在しません: {fully_qualified_name}")
+            if not rows:
+                raise ValueError(f"ビューが見つかりません: {fully_qualified_name}")
 
-        view_definition = rows[0].view_definition
-        logger.debug(f"ビュー定義を取得しました: {len(view_definition)}文字")
+            # 最初の行の view_definition 列を取得
+            view_definition = rows[0]["view_definition"]
 
-        return view_definition
+            if not view_definition:
+                raise ValueError(f"ビュー定義が空です: {fully_qualified_name}")
+
+            return str(view_definition)
+
+        except Exception as e:
+            logger.error(
+                f"ビュー定義の取得に失敗しました: {fully_qualified_name} - {e}"
+            )
+            raise ValueError(
+                f"ビュー定義を取得できません: {fully_qualified_name} - {e}"
+            )
 
     def get_view_schema(self, fully_qualified_name: str) -> List[Dict[str, str]]:
         """ビューのスキーマ情報を取得します。
@@ -151,10 +166,10 @@ class BigQueryClient:
             fully_qualified_name: ビューの完全修飾名 (例: "project.dataset.view")
 
         Returns:
-            スキーマ情報の辞書のリスト（各辞書には name, type, description などのキーが含まれる）
+            スキーマ情報のリスト。各要素は辞書で、"name"と"description"を含みます。
 
         Raises:
-            ValueError: ビューが存在しない場合
+            ValueError: ビューが存在しない場合、またはアクセスできない場合
         """
         parts = fully_qualified_name.split(".")
         if len(parts) != 3:
@@ -192,8 +207,7 @@ class BigQueryClient:
     def get_table_dependencies(self, fully_qualified_name: str) -> List[str]:
         """ビューが参照しているテーブル/ビューの一覧を取得します。
 
-        注: このメソッドは現在、Information Schemaのみを使用した簡易実装です。
-        将来的にはData Lineage APIを使用した正確な実装に置き換える予定です。
+        Google Cloud Datacatalog Lineage APIを使用して、ビューの依存関係を取得します。
 
         Args:
             fully_qualified_name: ビューの完全修飾名 (例: "project.dataset.view")
@@ -201,8 +215,54 @@ class BigQueryClient:
         Returns:
             参照先の完全修飾名のリスト
         """
-        # 現時点では簡易的な実装
-        # SQL定義からテーブル参照を抽出する処理は複雑なため、まずは実装を省略
-        # 将来的にはLineage APIを使用した正確な実装に置き換える予定
-        logger.warning("依存関係の分析はまだ実装されていません")
-        return []
+        try:
+            # fully_qualified_nameからプロジェクト、データセット、テーブル名を抽出
+            parts = fully_qualified_name.split(".")
+            if len(parts) != 3:
+                raise ValueError(f"無効なテーブル名形式です: {fully_qualified_name}")
+
+            project_id, dataset_id, table_name = parts
+
+            # BigQuery用のFQNフォーマットを作成（Lineage API用）
+            bq_fqn = f"bigquery:{fully_qualified_name}"
+
+            logger.debug(f"Lineage APIを使用して依存関係を取得: {bq_fqn}")
+
+            # Lineage APIクライアントを初期化
+            lineage_client = datacatalog_lineage_v1.LineageClient()
+
+            # 検索リクエストを作成 (このビューをターゲットとするリンクを検索)
+            target = datacatalog_lineage_v1.EntityReference()
+            target.fully_qualified_name = bq_fqn
+
+            # APIの呼び出し
+            # GCPのロケーションはBigQueryと一致させる必要があります
+            location = self.location
+
+            request = datacatalog_lineage_v1.SearchLinksRequest(
+                target=target,
+                parent=f"projects/{project_id}/locations/{location}",
+            )
+
+            # APIを呼び出し、結果を取得
+            page_result = lineage_client.search_links(request=request)
+
+            # 結果を処理
+            dependencies = []
+            for link in page_result:
+                # ソースからBigQueryの完全修飾名を抽出
+                source_fqn = link.source.fully_qualified_name
+                if source_fqn.startswith("bigquery:"):
+                    # bigquery:project.dataset.tableから project.dataset.table 形式に変換
+                    bq_name = source_fqn[len("bigquery:") :]
+                    dependencies.append(bq_name)
+
+            logger.info(
+                f"依存関係を{len(dependencies)}件取得しました: {fully_qualified_name}"
+            )
+            return dependencies
+
+        except Exception as e:
+            logger.error(f"依存関係の取得に失敗しました: {fully_qualified_name} - {e}")
+            # エラーが発生した場合は空のリストを返す
+            return []

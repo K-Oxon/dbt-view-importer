@@ -26,6 +26,10 @@ def test_list_views():
             def __init__(self, table_name):
                 self.table_name = table_name
 
+            def __getitem__(self, key):
+                # 辞書アクセスをサポート
+                return getattr(self, key)
+
         # リストでiterableにする
         mock_query_result = [MockRow("view1"), MockRow("view2")]
 
@@ -63,6 +67,10 @@ def test_get_view_definition():
         class MockRow:
             def __init__(self, view_definition):
                 self.view_definition = view_definition
+
+            def __getitem__(self, key):
+                # 辞書アクセスをサポート
+                return getattr(self, key)
 
         # リストでiterableにする
         mock_query_result = [MockRow("SELECT * FROM test_table")]
@@ -144,17 +152,68 @@ def test_get_view_schema():
         mock_instance.get_table.assert_called_once_with(mock_table_ref)
 
 
-def test_get_table_dependencies():
-    """テーブル依存関係の取得をテスト（モック使用）"""
-    with patch("bq2dbt.converter.bigquery.bigquery.Client") as mock_bq_client:
-        # モックのget_table_dependenciesメソッド実装 (まだ実装されていない場合のスタブ)
-        mock_instance = mock_bq_client.return_value
+@patch("google.cloud.datacatalog_lineage_v1.LineageClient")
+def test_get_table_dependencies(mock_lineage_client_class):
+    """テーブル依存関係の取得をテスト"""
+    # LineageClientのモックを設定
+    mock_lineage_client = MagicMock()
+    mock_lineage_client_class.return_value = mock_lineage_client
 
+    # SearchLinksの結果をモック
+    mock_link1 = MagicMock()
+    mock_link1.source.fully_qualified_name = "bigquery:project.dataset.source_view1"
+
+    mock_link2 = MagicMock()
+    mock_link2.source.fully_qualified_name = "bigquery:project.dataset.source_view2"
+
+    # PagedIteratorのような動作をするモックを作成
+    mock_page_result = MagicMock()
+    mock_page_result.__iter__.return_value = [mock_link1, mock_link2]
+    mock_lineage_client.search_links.return_value = mock_page_result
+
+    # BigQueryクライアントを初期化
+    client = BigQueryClient("project")
+
+    # 依存関係を取得
+    dependencies = client.get_table_dependencies("project.dataset.view")
+
+    # 結果を検証
+    assert dependencies == [
+        "project.dataset.source_view1",
+        "project.dataset.source_view2",
+    ]
+
+    # search_linksが正しい引数で呼ばれたことを確認
+    mock_lineage_client.search_links.assert_called_once()
+    call_args = mock_lineage_client.search_links.call_args[1]
+
+    # リクエストオブジェクトを検証
+    request = call_args["request"]
+    assert request.parent == "projects/project/locations/asia-northeast1"
+    assert request.target.fully_qualified_name == "bigquery:project.dataset.view"
+
+
+def test_get_table_dependencies_error_handling():
+    """テーブル依存関係の取得時のエラーハンドリングをテスト"""
+    with patch("bq2dbt.converter.bigquery.bigquery.Client") as mock_bq_client, patch(
+        "bq2dbt.converter.bigquery.datacatalog_lineage_v1.LineageClient"
+    ) as mock_lineage_client:
+        # BigQueryクライアントのモック
+        mock_bq_instance = mock_bq_client.return_value
+
+        # LineageClientのモック - 例外をスロー
+        mock_lineage_instance = mock_lineage_client.return_value
+        mock_lineage_instance.search_links.side_effect = Exception("API error")
+
+        # テスト対象インスタンスの作成
         client = BigQueryClient("test-project")
 
-        # 現在の実装ではプレースホルダーなので、結果は空リスト
+        # テスト実行 - エラーが発生しても空リストが返されることを確認
         result = client.get_table_dependencies("test-project.test_dataset.test_view")
-        assert isinstance(result, list)
+        assert result == []
+
+        # APIが呼び出されたことを確認
+        mock_lineage_instance.search_links.assert_called_once()
 
 
 # 実際のBigQueryに接続するテスト (オプション)

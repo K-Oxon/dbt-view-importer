@@ -69,7 +69,9 @@ def test_import_views_command_basic(mock_resolver, mock_generator, mock_bq_clien
         assert result.exit_code == 0
 
         # BigQueryClientの呼び出し確認
-        mock_bq_client.assert_called_once_with("test-project")
+        mock_bq_client.assert_called_once_with(
+            "test-project", location="asia-northeast1"
+        )
         mock_bq_instance.list_views.assert_called_once_with(
             "test_dataset",
             include_patterns=None,
@@ -93,7 +95,11 @@ def test_import_views_command_basic(mock_resolver, mock_generator, mock_bq_clien
 
 
 @patch("bq2dbt.commands.import_cmd.BigQueryClient")
-def test_import_views_command_with_filters(mock_bq_client):
+@patch("bq2dbt.commands.import_cmd.ModelGenerator")
+@patch("bq2dbt.commands.import_cmd.DependencyResolver")
+def test_import_views_command_with_filters(
+    mock_resolver, mock_generator, mock_bq_client
+):
     """フィルタオプション付きのインポートビューコマンドテスト"""
     # モックの設定
     mock_bq_instance = MagicMock()
@@ -128,6 +134,9 @@ def test_import_views_command_with_filters(mock_bq_client):
         assert result.exit_code == 0
 
         # BigQueryClientの呼び出し確認（フィルタが適用されていることを確認）
+        mock_bq_client.assert_called_once_with(
+            "test-project", location="asia-northeast1"
+        )
         mock_bq_instance.list_views.assert_called_once_with(
             "test_dataset",
             include_patterns=["include_*", "another_*"],

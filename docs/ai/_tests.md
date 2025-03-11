@@ -1,6 +1,6 @@
 # テスト実装状況と戦略
 
-## 実装済みテスト概要
+## 実装済みテスト概要 (2024/03/11 更新)
 
 現在のプロジェクトには以下のテストが実装されています。
 
@@ -10,7 +10,8 @@
 - `test_list_views`: ビュー一覧の取得処理をテスト（モック使用）
 - `test_get_view_definition`: ビュー定義の取得をテスト（モック使用）
 - `test_get_view_schema`: ビュースキーマの取得をテスト（モック使用）
-- `test_get_table_dependencies`: テーブル依存関係の取得をテスト（モック使用）
+- `test_get_table_dependencies`: テーブル依存関係の取得をテスト（Lineage APIのモック使用）
+- `test_get_table_dependencies_error_handling`: 依存関係取得時のエラー処理をテスト
 - `TestBigQueryIntegration`: 実際のBigQuery接続が必要な統合テスト（デフォルトではスキップ）
   - `test_real_connection`: 実際のBigQuery接続をテスト
   - `test_real_list_views`: 実際のBigQueryからビュー一覧を取得するテスト
@@ -23,15 +24,40 @@
 
 ### 依存関係テスト (`tests/converter/test_dependency.py`)
 
-- 依存関係の解析と解決に関するテスト
+- `test_dependency_resolver_init`: DependencyResolverの初期化をテスト
+- `test_build_dependency_graph`: 依存関係グラフ構築をテスト
+- `test_get_topological_order`: トポロジカルソートをテスト
+- `test_get_topological_order_with_cycle`: 循環参照があるケースをテスト
+- `test_get_dependent_views`: 依存ビュー取得をテスト
+- `test_analyze_dependencies`: 依存関係解析機能をテスト
+- `test_analyze_dependencies_with_error`: エラー発生時の依存関係解析挙動をテスト
+- `test_display_dependencies`: 依存関係表示をテスト
+- `test_build_dependency_tree`: 依存関係ツリー構築をテスト
 
 ### ジェネレーターテスト (`tests/converter/test_generator.py`)
 
 - dbtモデル生成に関するテスト
 
-## 最近修正したテスト
+## 最近修正したテスト (2024/03/11)
 
-### 1. `test_get_view_definition` の修正
+### 1. `MockRow` クラスの改善
+
+問題点:
+- BigQueryの結果行は辞書のようにアクセスできるが、モックではそれをサポートしていなかった
+- `rows[0]["view_definition"]` のような参照でエラーが発生していた
+
+修正内容:
+```python
+class MockRow:
+    def __init__(self, view_definition):
+        self.view_definition = view_definition
+        
+    def __getitem__(self, key):
+        # 辞書アクセスをサポート
+        return getattr(self, key)
+```
+
+### 2. `test_get_view_definition` の修正
 
 問題点:
 - モックの設定がBigQueryClientの実装と合致していなかった
@@ -51,28 +77,32 @@ mock_query_job = mock_query_result
 mock_instance.query.return_value = mock_query_job
 ```
 
-### 2. `test_list_views` の修正
-
-- 同様の問題を修正
-- モックの設定を実際の実装に合わせて調整
-
-### 3. `test_import_views_command_basic` の修正
+### 3. `get_table_dependencies` のエラー処理改善
 
 問題点:
-- テストでは`list_views`メソッドが単にデータセット名のみで呼び出されることを期待していたが、実際の実装では追加パラメータ(`include_patterns`, `exclude_patterns`)も渡していた
+- 依存関係取得でエラーが発生した場合に例外を投げるようになっていたが、テストでは空リストを返すことを期待していた
 
 修正内容:
 ```python
-# 修正前
-mock_bq_instance.list_views.assert_called_once_with("test_dataset")
-
-# 修正後
-mock_bq_instance.list_views.assert_called_once_with(
-    "test_dataset",
-    include_patterns=None,
-    exclude_patterns=None,
-)
+except Exception as e:
+    logger.error(f"依存関係の取得に失敗しました: {fully_qualified_name} - {e}")
+    # エラーが発生した場合は空のリストを返す
+    return []
 ```
+
+### 4. 依存関係解析機能のテスト追加
+
+依存関係解析機能の実装に伴い、以下のテストを新たに追加：
+
+- `test_analyze_dependencies`: 指定したデータセットのビューの依存関係を分析するテスト
+- `test_analyze_dependencies_with_error`: 依存関係解析中にエラーが発生した場合の挙動をテスト
+- `test_display_dependencies_new`: 新しい依存関係表示メソッドをテスト
+- `test_build_dependency_tree`: 依存関係ツリーの構築をテスト
+
+### 5. 型チェック改善
+
+- py.typed ファイルの追加による内部モジュールの型チェックサポート
+- ビルド設定の更新（py.typed ファイルの含め方）
 
 ## テスト戦略
 

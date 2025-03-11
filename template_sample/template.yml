@@ -1,0 +1,18 @@
+version: 2
+
+models:
+  - name: {{ model_name }}
+    description: |
+      {{ description | default('') }}
+    config:
+      persist_docs:
+        relation: true
+        columns: true
+      meta:
+        status: this is a test
+    columns:
+{%- for column in columns %}
+      - name: {{ column.name }}
+        description: |
+          {{ column.description | default('') }}
+{%- endfor %}
