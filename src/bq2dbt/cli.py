@@ -6,8 +6,8 @@ import sys
 import click
 from rich.console import Console
 
-from bq2dbt.commands.import_cmd import import_cmd
-from bq2dbt.commands.logs_cmd import logs_cmd
+from bq2dbt.commands.importer import import_cmd
+from bq2dbt.commands.logs import logs_cmd
 
 # バージョン情報
 __version__ = "0.1.0"

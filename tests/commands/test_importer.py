@@ -1,4 +1,4 @@
-"""import_cmdのテスト"""
+"""importerモジュールのテスト"""
 import os
 from unittest.mock import MagicMock, patch
 
