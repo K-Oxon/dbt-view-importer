@@ -107,6 +107,53 @@ class BigQueryClient:
         regex_pattern = pattern.replace("*", ".*")
         return bool(re.match(f"^{regex_pattern}$", text))
 
+    def get_table_type(self, fully_qualified_name: str) -> str:
+        """テーブルの種類（VIEW、TABLE、EXTERNAL、MODEL等）を取得します。
+
+        Args:
+            fully_qualified_name: テーブルの完全修飾名 (例: "project.dataset.table")
+
+        Returns:
+            テーブルの種類を表す文字列（"VIEW", "TABLE", "EXTERNAL", "MODEL"等）
+            存在しない場合は空文字列を返します
+
+        Note:
+            BigQueryのテーブルタイプについては以下を参照:
+            https://cloud.google.com/bigquery/docs/information-schema-tables
+        """
+        parts = fully_qualified_name.split(".")
+        if len(parts) != 3:
+            raise ValueError(f"無効なテーブル名形式です: {fully_qualified_name}")
+
+        project_id, dataset_id, table_id = parts
+
+        try:
+            # INFORMATION_SCHEMA.TABLESからテーブルタイプを取得
+            query = f"""
+                SELECT
+                  table_type
+                FROM
+                  `{project_id}.{dataset_id}.INFORMATION_SCHEMA.TABLES`
+                WHERE
+                  table_name = '{table_id}'
+            """
+
+            rows = list(self.client.query(query, location=self.location))
+
+            if not rows:
+                logger.warning(f"テーブルが見つかりません: {fully_qualified_name}")
+                return ""
+
+            table_type = rows[0]["table_type"]
+            logger.debug(f"テーブルタイプ: {fully_qualified_name} - {table_type}")
+            return table_type
+
+        except Exception as e:
+            logger.error(
+                f"テーブルタイプの取得に失敗しました: {fully_qualified_name} - {e}"
+            )
+            return ""
+
     def get_view_definition(self, fully_qualified_name: str) -> str:
         """ビューのSQL定義を取得します。
 
@@ -124,6 +171,8 @@ class BigQueryClient:
             raise ValueError(f"無効なビュー名形式です: {fully_qualified_name}")
 
         project_id, dataset_id, view_id = parts
+
+        # テーブルタイプのチェックは呼び出し元で行うため、ここでは行わない
 
         try:
             # ビュー定義を取得するクエリ

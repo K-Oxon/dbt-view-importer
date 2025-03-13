@@ -50,7 +50,7 @@ def extract_dataset_prefix(dataset_name: str) -> str:
     Returns:
         データセットプレフィックス
     """
-    # データセット名から共通プレフィックス（dm_, dw_, stg_など）を削除
+    # データセット名から共通プレフィックス（dm_, dwh_, stg_など）を削除
     match = re.match(r"^([a-z]+_)(.+)$", dataset_name)
     if match:
         prefix, name = match.groups()

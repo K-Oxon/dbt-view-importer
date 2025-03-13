@@ -10,7 +10,7 @@ from rich.table import Table
 from bq2dbt.converter.bigquery import BigQueryClient
 from bq2dbt.converter.dependency import DependencyResolver
 from bq2dbt.converter.generator import ModelGenerator
-from bq2dbt.utils.naming import NamingPreset
+from bq2dbt.utils.naming import NamingPreset, generate_model_name
 
 
 def initialize_bigquery_client(
@@ -226,12 +226,7 @@ def check_file_exists(
     project_id, dataset, view_name = parts
 
     # 命名規則に基づいてファイル名を生成
-    if naming_preset == NamingPreset.DATASET_PREFIX:
-        base_name = f"{dataset}__{view_name}"
-    elif naming_preset == NamingPreset.TABLE_ONLY:
-        base_name = view_name
-    else:  # NamingPreset.FULL
-        base_name = f"{dataset}_{view_name}"
+    base_name = generate_model_name(view, naming_preset)
 
     sql_path = output_path / f"{base_name}.sql"
     yml_path = output_path / f"{base_name}.yml"
@@ -301,19 +296,20 @@ def convert_view(
 
     Raises:
         RuntimeError: 変換中にエラーが発生した場合
+        ValueError: テーブルタイプがVIEW以外、またはオブジェクトが存在しない場合
     """
-    try:
-        # テーブルタイプを確認
-        table_type = bq_client.get_table_type(view)
-        if table_type != "VIEW":
-            # ビューでない場合は専用の例外を発生させる
-            if not table_type:
-                raise ValueError(f"オブジェクトが存在しません: {view}")
-            else:
-                raise ValueError(
-                    f"オブジェクトはビューではありません (タイプ: {table_type}): {view}"
-                )
+    # テーブルタイプを確認
+    table_type = bq_client.get_table_type(view)
+    if table_type != "VIEW":
+        # ビューでない場合はValueErrorを返す（呼び出し元でスキップ処理する）
+        if not table_type:
+            raise ValueError(f"オブジェクトが存在しません: {view}")
+        else:
+            raise ValueError(
+                f"オブジェクトはビューではありません (タイプ: {table_type}): {view}"
+            )
 
+    try:
         # ビュー定義を取得
         view_definition = bq_client.get_view_definition(view)
         if debug:
@@ -493,6 +489,23 @@ def import_views(
     skipped_views = {}
 
     for view in ordered_views:
+        # テーブルタイプを確認（ビューでない場合はスキップ）
+        try:
+            table_type = bq_client.get_table_type(view)
+            if table_type != "VIEW":
+                if not table_type:
+                    skipped_views[view] = "オブジェクトが存在しません"
+                else:
+                    skipped_views[view] = f"ビューではありません (タイプ: {table_type})"
+                # ビューでない場合は次のオブジェクトへ
+                continue
+        except Exception as e:
+            logger.warning(
+                f"テーブルタイプの確認中にエラーが発生しました: {view} - {e}"
+            )
+            skipped_views[view] = f"テーブルタイプの確認に失敗: {str(e)}"
+            continue
+
         # ファイルの存在確認
         sql_exists, yml_exists, sql_path, yml_path = check_file_exists(
             view, naming_preset_enum, output_dir
@@ -525,24 +538,9 @@ def import_views(
                 view, bq_client, generator, naming_preset_enum, dry_run, debug, logger
             )
             converted_models.append(result)
-        except RuntimeError as e:
+        except Exception as e:
             logger.error(f"ビュー '{view}' の変換中にエラーが発生しました: {e}")
-
-            # エラーメッセージからテーブルタイプに関する情報を抽出
-            error_msg = str(e)
-            if "オブジェクトはビューではありません" in error_msg:
-                # テーブルタイプに関するエラーの場合は簡潔なメッセージを表示
-                table_type = (
-                    error_msg.split("タイプ: ")[1].split(")")[0]
-                    if "タイプ: " in error_msg
-                    else "不明"
-                )
-                skipped_views[view] = f"ビューではありません (タイプ: {table_type})"
-            elif "オブジェクトが存在しません" in error_msg:
-                skipped_views[view] = "オブジェクトが存在しません"
-            else:
-                # その他のエラーの場合
-                skipped_views[view] = f"エラー: {str(e)}"
+            skipped_views[view] = f"エラー: {str(e)}"
 
     # 変換結果の表示
     display_conversion_results(converted_models, skipped_views, dry_run, console)

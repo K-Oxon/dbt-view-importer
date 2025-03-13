@@ -248,6 +248,7 @@ class DataCatalogDependencyResolver(DependencyResolverBase):
                 for dep in dependencies:
                     self.reverse_graph[dep].append(view)
 
+                    # 依存先を必要なビューに追加
                     required_views.add(dep)
 
                     # まだ処理していないビューで、最大深さに達していない場合はキューに追加
