@@ -266,11 +266,13 @@ def confirm_view_import(
     for file in existing_files:
         print(f"  - {file}")
 
-    import_this_view = Confirm.ask("このビューをインポートしますか?")
+    import_this_view = Confirm.ask(
+        f"このビューをインポートしますか? {view}", default=True
+    )
     if not import_this_view:
         return False, False
 
-    overwrite = Confirm.ask("既存のファイルを上書きしますか?")
+    overwrite = Confirm.ask("既存のファイルを上書きしますか?", default=True)
     return True, overwrite
 
 
@@ -296,8 +298,22 @@ def convert_view(
 
     Returns:
         (ビュー名, SQLファイルパス, YAMLファイルパス) のタプル
+
+    Raises:
+        RuntimeError: 変換中にエラーが発生した場合
     """
     try:
+        # テーブルタイプを確認
+        table_type = bq_client.get_table_type(view)
+        if table_type != "VIEW":
+            # ビューでない場合は専用の例外を発生させる
+            if not table_type:
+                raise ValueError(f"オブジェクトが存在しません: {view}")
+            else:
+                raise ValueError(
+                    f"オブジェクトはビューではありません (タイプ: {table_type}): {view}"
+                )
+
         # ビュー定義を取得
         view_definition = bq_client.get_view_definition(view)
         if debug:
@@ -509,9 +525,24 @@ def import_views(
                 view, bq_client, generator, naming_preset_enum, dry_run, debug, logger
             )
             converted_models.append(result)
-        except Exception as e:
-            logger.exception(f"ビュー '{view}' の変換中にエラーが発生しました")
-            skipped_views[view] = f"エラー: {str(e)}"
+        except RuntimeError as e:
+            logger.error(f"ビュー '{view}' の変換中にエラーが発生しました: {e}")
+
+            # エラーメッセージからテーブルタイプに関する情報を抽出
+            error_msg = str(e)
+            if "オブジェクトはビューではありません" in error_msg:
+                # テーブルタイプに関するエラーの場合は簡潔なメッセージを表示
+                table_type = (
+                    error_msg.split("タイプ: ")[1].split(")")[0]
+                    if "タイプ: " in error_msg
+                    else "不明"
+                )
+                skipped_views[view] = f"ビューではありません (タイプ: {table_type})"
+            elif "オブジェクトが存在しません" in error_msg:
+                skipped_views[view] = "オブジェクトが存在しません"
+            else:
+                # その他のエラーの場合
+                skipped_views[view] = f"エラー: {str(e)}"
 
     # 変換結果の表示
     display_conversion_results(converted_models, skipped_views, dry_run, console)
