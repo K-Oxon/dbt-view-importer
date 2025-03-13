@@ -2,8 +2,7 @@ version: 2
 
 models:
   - name: {{ model_name }}
-    description: |
-      {{ description | default('') }}
+    description: "{{ description | default('') }}"
     config:
       persist_docs:
         relation: true
@@ -13,6 +12,5 @@ models:
     columns:
 {%- for column in columns %}
       - name: {{ column.name }}
-        description: |
-          {{ column.description | default('') }}
+        description: "{{ column.description | default('') }}"
 {%- endfor %}
