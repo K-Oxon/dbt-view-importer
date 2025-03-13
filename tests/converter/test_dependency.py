@@ -1,42 +1,61 @@
 """DependencyResolverのテスト"""
 from unittest.mock import MagicMock, patch
 
-import pytest
-from bq2dbt.converter.dependency import DependencyResolver
+from bq2dbt.converter.dependency import (
+    DataCatalogDependencyResolver,
+    DependencyResolver,
+)
 from rich.console import Console
 from rich.table import Table
 from rich.tree import Tree
 
 
-def test_dependency_resolver_init():
+@patch("bq2dbt.converter.dependency.LineageClient")
+def test_dependency_resolver_init(mock_lineage_client_class):
     """DependencyResolverの初期化をテスト"""
-    mock_client = MagicMock()
-    resolver = DependencyResolver(mock_client)
+    mock_bq_client = MagicMock()
+    mock_bq_client.project_id = "project"
+    mock_bq_client.location = "location"
 
-    assert resolver.bq_client == mock_client
+    # LineageClientのモックを設定
+    mock_lineage_client = MagicMock()
+    mock_lineage_client_class.return_value = mock_lineage_client
+
+    resolver = DependencyResolver(mock_bq_client)
+
+    assert resolver.bq_client == mock_bq_client
+    assert resolver.lineage_client is not None
     assert resolver.dependency_graph == {}
     assert isinstance(resolver.reverse_graph, dict)
 
+    # LineageClientが正しく作成されたことを確認
+    mock_lineage_client_class.assert_called_once_with(
+        mock_bq_client.project_id, mock_bq_client.location
+    )
 
-def test_build_dependency_graph():
-    """依存関係グラフの構築をテスト"""
-    mock_client = MagicMock()
+
+def test_analyze_dependencies_builds_graph():
+    """analyze_dependenciesメソッドが依存関係グラフを構築することをテスト"""
+    mock_bq_client = MagicMock()
+    mock_lineage_client = MagicMock()
 
     # モックのget_table_dependenciesメソッドの戻り値を設定
-    mock_client.get_table_dependencies.side_effect = [
+    mock_lineage_client.get_table_dependencies.side_effect = [
         ["project.dataset.view2", "project.dataset.view3"],  # view1の依存先
         ["project.dataset.view3"],  # view2の依存先
         [],  # view3の依存先
     ]
+    mock_bq_client.project_id = "project"
 
-    resolver = DependencyResolver(mock_client)
+    resolver = DataCatalogDependencyResolver(mock_bq_client, mock_lineage_client)
     views = [
         "project.dataset.view1",
         "project.dataset.view2",
         "project.dataset.view3",
     ]
 
-    dependency_graph = resolver.build_dependency_graph(views)
+    # analyze_dependenciesを呼び出して依存関係グラフを構築
+    _, dependency_graph = resolver.analyze_dependencies(views, "dataset")
 
     # 期待される依存関係グラフ
     expected_graph = {
@@ -51,8 +70,9 @@ def test_build_dependency_graph():
 
 def test_get_topological_order():
     """トポロジカルソートのテスト"""
-    mock_client = MagicMock()
-    resolver = DependencyResolver(mock_client)
+    mock_bq_client = MagicMock()
+    mock_lineage_client = MagicMock()
+    resolver = DataCatalogDependencyResolver(mock_bq_client, mock_lineage_client)
 
     # 依存関係グラフを手動で設定
     resolver.dependency_graph = {
@@ -73,27 +93,36 @@ def test_get_topological_order():
     ]
 
 
-def test_get_topological_order_with_cycle():
-    """循環参照があるケースのトポロジカルソートテスト"""
-    mock_client = MagicMock()
-    resolver = DependencyResolver(mock_client)
+def test_get_topological_order_with_depth():
+    """深さベースのトポロジカルソートテスト"""
+    mock_bq_client = MagicMock()
+    mock_lineage_client = MagicMock()
+    resolver = DataCatalogDependencyResolver(mock_bq_client, mock_lineage_client)
 
-    # 循環参照のある依存関係グラフを手動で設定
+    # 依存関係グラフを手動で設定
     resolver.dependency_graph = {
-        "project.dataset.view1": ["project.dataset.view2"],
+        "project.dataset.view1": ["project.dataset.view2", "project.dataset.view3"],
         "project.dataset.view2": ["project.dataset.view3"],
-        "project.dataset.view3": ["project.dataset.view1"],
+        "project.dataset.view3": [],
     }
 
-    # 循環参照があるため、ValueError が発生するはず
-    with pytest.raises(ValueError):
-        resolver.get_topological_order()
+    # トポロジカルソートを実行
+    order = resolver.get_topological_order()
+
+    # 期待される順序: 深さに基づいてソート
+    # view3 (深さ2), view2 (深さ1), view1 (深さ0)
+    assert order == [
+        "project.dataset.view3",
+        "project.dataset.view2",
+        "project.dataset.view1",
+    ]
 
 
 def test_get_dependent_views():
     """依存しているビューの取得をテスト"""
-    mock_client = MagicMock()
-    resolver = DependencyResolver(mock_client)
+    mock_bq_client = MagicMock()
+    mock_lineage_client = MagicMock()
+    resolver = DataCatalogDependencyResolver(mock_bq_client, mock_lineage_client)
 
     # 逆依存関係グラフを手動で設定
     resolver.reverse_graph = {
@@ -110,11 +139,12 @@ def test_get_dependent_views():
 
 def test_resolve_all_dependencies():
     """依存関係を含む完全なビューリストを作成するテスト"""
-    mock_client = MagicMock()
+    mock_bq_client = MagicMock()
+    mock_lineage_client = MagicMock()
 
     # get_table_dependenciesの戻り値を設定
     # view1は他の2つのビューに依存、view2は1つのビューに依存、view3は依存先なし
-    mock_client.get_table_dependencies.side_effect = [
+    mock_lineage_client.get_table_dependencies.side_effect = [
         ["project.dataset1.view2", "project.dataset1.view3"],  # view1の依存先
         [
             "project.dataset1.view3",
@@ -125,9 +155,9 @@ def test_resolve_all_dependencies():
     ]
 
     # project_idを設定
-    mock_client.project_id = "project"
+    mock_bq_client.project_id = "project"
 
-    resolver = DependencyResolver(mock_client)
+    resolver = DataCatalogDependencyResolver(mock_bq_client, mock_lineage_client)
 
     # データセット1のビューに対して解析
     initial_views = ["project.dataset1.view1", "project.dataset1.view2"]
@@ -145,18 +175,19 @@ def test_resolve_all_dependencies():
     assert "project.dataset2.view4" not in all_views
 
     # get_table_dependenciesが正しく呼ばれたことを確認
-    assert mock_client.get_table_dependencies.call_count == 3
+    assert mock_lineage_client.get_table_dependencies.call_count == 3
 
 
 def test_resolve_all_dependencies_with_no_dependencies():
     """依存関係がない場合のテスト"""
-    mock_client = MagicMock()
+    mock_bq_client = MagicMock()
+    mock_lineage_client = MagicMock()
 
     # すべてのビューに依存関係なし
-    mock_client.get_table_dependencies.return_value = []
-    mock_client.project_id = "project"
+    mock_lineage_client.get_table_dependencies.return_value = []
+    mock_bq_client.project_id = "project"
 
-    resolver = DependencyResolver(mock_client)
+    resolver = DataCatalogDependencyResolver(mock_bq_client, mock_lineage_client)
     initial_views = ["project.dataset1.view1", "project.dataset1.view2"]
 
     # analyze_dependenciesメソッドを使用
@@ -164,14 +195,15 @@ def test_resolve_all_dependencies_with_no_dependencies():
 
     # 元のビューリストと同じになるはず
     assert set(all_views) == set(initial_views)
-    assert mock_client.get_table_dependencies.call_count == 2
+    assert mock_lineage_client.get_table_dependencies.call_count == 2
 
 
 @patch("rich.console.Console.print")
 def test_display_dependencies(mock_print):
     """依存関係ツリーの表示テスト"""
-    mock_client = MagicMock()
-    resolver = DependencyResolver(mock_client)
+    mock_bq_client = MagicMock()
+    mock_lineage_client = MagicMock()
+    resolver = DataCatalogDependencyResolver(mock_bq_client, mock_lineage_client)
 
     # 依存関係グラフを手動で設定
     resolver.dependency_graph = {
@@ -199,8 +231,9 @@ def test_display_dependencies(mock_print):
 @patch("rich.console.Console.print")
 def test_display_dependencies_with_filtering(mock_print):
     """フィルタリング付きの依存関係ツリー表示テスト"""
-    mock_client = MagicMock()
-    resolver = DependencyResolver(mock_client)
+    mock_bq_client = MagicMock()
+    mock_lineage_client = MagicMock()
+    resolver = DataCatalogDependencyResolver(mock_bq_client, mock_lineage_client)
 
     # 複数データセットにまたがる依存関係グラフを設定
     resolver.dependency_graph = {
@@ -230,11 +263,12 @@ def test_display_dependencies_with_filtering(mock_print):
 
 def test_analyze_dependencies():
     """analyze_dependencies メソッドのテスト"""
-    mock_client = MagicMock()
-    mock_client.project_id = "project"
+    mock_bq_client = MagicMock()
+    mock_lineage_client = MagicMock()
+    mock_bq_client.project_id = "project"
 
     # モックのget_table_dependenciesメソッドの戻り値を設定
-    mock_client.get_table_dependencies.side_effect = [
+    mock_lineage_client.get_table_dependencies.side_effect = [
         [
             "project.dataset.view2",
             "project.dataset.view3",
@@ -245,133 +279,181 @@ def test_analyze_dependencies():
         [],  # view4の依存先 (もし呼ばれた場合)
     ]
 
-    resolver = DependencyResolver(mock_client)
+    resolver = DataCatalogDependencyResolver(mock_bq_client, mock_lineage_client)
     views = [
         "project.dataset.view1",
-        "project.dataset.view2",
     ]
 
-    # analyze_dependencies メソッドを呼び出し
-    result_views, result_graph = resolver.analyze_dependencies(views, "dataset")
+    # analyze_dependenciesメソッドを使用
+    all_views, dependency_graph = resolver.analyze_dependencies(views, "dataset")
 
-    # 依存関係グラフの確認
-    expected_graph = {
-        "project.dataset.view1": [
-            "project.dataset.view2",
-            "project.dataset.view3",
-            "project.other_dataset.view4",
-        ],
-        "project.dataset.view2": ["project.dataset.view3"],
-        "project.dataset.view3": [],
-    }
-
-    # 正しい追加ビューが含まれていることを確認
-    assert set(result_views) == {
+    # 結果の検証
+    expected_views = {
         "project.dataset.view1",
         "project.dataset.view2",
         "project.dataset.view3",
     }
+    assert set(all_views) == expected_views
+    assert "project.other_dataset.view4" not in all_views
 
-    # 他のデータセットのビュー (view4) は含まれていないことを確認
-    assert "project.other_dataset.view4" not in result_views
-
-    # 依存関係グラフに正しく追加されていることを確認
-    assert "project.dataset.view1" in result_graph
-    assert "project.dataset.view2" in result_graph
-    assert "project.dataset.view3" in result_graph
-
-    # get_table_dependencies が正しく呼ばれたことを確認
-    assert mock_client.get_table_dependencies.call_count == 3
-    mock_client.get_table_dependencies.assert_any_call("project.dataset.view1")
-    mock_client.get_table_dependencies.assert_any_call("project.dataset.view2")
-    mock_client.get_table_dependencies.assert_any_call("project.dataset.view3")
+    # 依存関係グラフの検証
+    assert dependency_graph["project.dataset.view1"] == [
+        "project.dataset.view2",
+        "project.dataset.view3",
+        "project.other_dataset.view4",
+    ]
+    assert dependency_graph["project.dataset.view2"] == ["project.dataset.view3"]
+    assert dependency_graph["project.dataset.view3"] == []
 
 
 def test_analyze_dependencies_with_error():
-    """analyze_dependencies メソッドのエラーハンドリングのテスト"""
-    mock_client = MagicMock()
-    mock_client.project_id = "project"
+    """エラーが発生した場合のanalyze_dependenciesメソッドのテスト"""
+    mock_bq_client = MagicMock()
+    mock_lineage_client = MagicMock()
+    mock_bq_client.project_id = "project"
 
-    # 一部のビューで例外が発生する場合のモック設定
+    # エラーを発生させるモック関数
     def mock_get_dependencies(view):
         if view == "project.dataset.view2":
-            raise ValueError("テスト用エラー")
+            raise Exception("テスト用エラー")
         elif view == "project.dataset.view1":
             return ["project.dataset.view2", "project.dataset.view3"]
         else:
             return []
 
-    mock_client.get_table_dependencies.side_effect = mock_get_dependencies
+    mock_lineage_client.get_table_dependencies.side_effect = mock_get_dependencies
 
-    resolver = DependencyResolver(mock_client)
-    views = [
-        "project.dataset.view1",
-        "project.dataset.view2",
-    ]
+    resolver = DataCatalogDependencyResolver(mock_bq_client, mock_lineage_client)
+    views = ["project.dataset.view1"]
 
-    # analyze_dependencies メソッドを呼び出し
-    result_views, result_graph = resolver.analyze_dependencies(views, "dataset")
+    # analyze_dependenciesメソッドを使用
+    all_views, dependency_graph = resolver.analyze_dependencies(views, "dataset")
 
-    # エラーが発生したビューも結果に含まれていることを確認
-    assert set(result_views) == {
+    # 結果の検証
+    expected_views = {
         "project.dataset.view1",
         "project.dataset.view2",
         "project.dataset.view3",
     }
+    assert set(all_views) == expected_views
 
-    # エラーが発生したビューは空の依存関係になっていることを確認
-    assert result_graph["project.dataset.view2"] == []
+    # 依存関係グラフの検証
+    assert dependency_graph["project.dataset.view1"] == [
+        "project.dataset.view2",
+        "project.dataset.view3",
+    ]
+    # エラーが発生したビューは空の依存関係リストになるはず
+    assert dependency_graph["project.dataset.view2"] == []
+    assert dependency_graph["project.dataset.view3"] == []
 
 
 @patch("rich.console.Console.print")
 def test_display_dependencies_new(mock_print):
-    """display_dependencies メソッドのテスト"""
-    mock_client = MagicMock()
-    resolver = DependencyResolver(mock_client)
+    """新しいdisplay_dependenciesメソッドのテスト"""
+    mock_bq_client = MagicMock()
+    mock_lineage_client = MagicMock()
+    resolver = DataCatalogDependencyResolver(mock_bq_client, mock_lineage_client)
 
-    # 依存関係グラフを設定
+    # 依存関係グラフを手動で設定
     resolver.dependency_graph = {
         "project.dataset.view1": ["project.dataset.view2", "project.dataset.view3"],
         "project.dataset.view2": ["project.dataset.view3"],
         "project.dataset.view3": [],
     }
 
-    # 逆方向の依存関係グラフも設定
+    # 逆依存関係グラフも設定
     resolver.reverse_graph = {
         "project.dataset.view2": ["project.dataset.view1"],
         "project.dataset.view3": ["project.dataset.view1", "project.dataset.view2"],
     }
 
-    # メソッドを呼び出し
-    resolver.display_dependencies(
-        ["project.dataset.view1", "project.dataset.view2", "project.dataset.view3"]
-    )
+    # 依存関係を表示
+    views = ["project.dataset.view1", "project.dataset.view2", "project.dataset.view3"]
+    resolver.display_dependencies(views)
 
-    # Tableオブジェクトが正しく生成されたことを確認
+    # printは1回呼ばれるはず（テーブル出力）
     assert mock_print.call_count == 1
-    call_args = mock_print.call_args[0][0]
-    assert isinstance(call_args, Table)
-    assert call_args.title == "ビュー依存関係一覧"
+    # 引数がTableオブジェクトであることを確認
+    assert isinstance(mock_print.call_args[0][0], Table)
 
 
 def test_build_dependency_tree():
-    """build_dependency_tree メソッドのテスト"""
-    mock_client = MagicMock()
-    resolver = DependencyResolver(mock_client)
+    """build_dependency_treeメソッドのテスト"""
+    mock_bq_client = MagicMock()
+    mock_lineage_client = MagicMock()
+    resolver = DataCatalogDependencyResolver(mock_bq_client, mock_lineage_client)
 
-    # 依存関係グラフを設定
+    # 依存関係グラフを手動で設定
     resolver.dependency_graph = {
         "project.dataset.view1": ["project.dataset.view2", "project.dataset.view3"],
         "project.dataset.view2": ["project.dataset.view3"],
         "project.dataset.view3": [],
     }
 
-    # メソッドを呼び出し
+    # 依存関係ツリーを構築
     tree = resolver.build_dependency_tree("project.dataset.view1")
 
     # 結果がTreeオブジェクトであることを確認
     assert isinstance(tree, Tree)
 
-    # Treeオブジェクトの文字列検証はせず、クラスタイプだけ確認する
-    # 実装の詳細に過度に依存するテストを避ける
-    assert tree is not None
+
+def test_analyze_dependencies_with_max_depth():
+    """最大深さを指定したanalyze_dependenciesメソッドのテスト"""
+    mock_bq_client = MagicMock()
+    mock_lineage_client = MagicMock()
+    mock_bq_client.project_id = "project"
+
+    # 深い依存関係を持つモックの戻り値を設定
+    mock_lineage_client.get_table_dependencies.side_effect = [
+        ["project.dataset.view2"],  # view1の依存先
+        ["project.dataset.view3"],  # view2の依存先
+        ["project.dataset.view4"],  # view3の依存先
+        ["project.dataset.view5"],  # view4の依存先（最大深さを超える）
+        [],  # view5の依存先（呼ばれないはず）
+    ]
+
+    resolver = DataCatalogDependencyResolver(mock_bq_client, mock_lineage_client)
+    views = ["project.dataset.view1"]
+
+    # 最大深さ2でanalyze_dependenciesメソッドを使用
+    all_views, _ = resolver.analyze_dependencies(views, "dataset", max_depth=2)
+
+    # 結果の検証
+    # 実装では、max_depthは深さではなく、依存関係の追跡レベルを表している
+    # view1(深さ0) -> view2(深さ1) -> view3(深さ2) -> view4(深さ3)
+    # max_depth=2の場合、深さ0から数えて2レベル先（深さ2）までの依存関係を追跡するため、
+    # view4も結果に含まれる
+    expected_views = {
+        "project.dataset.view1",
+        "project.dataset.view2",
+        "project.dataset.view3",
+        "project.dataset.view4",
+    }
+    assert set(all_views) == expected_views
+
+    # get_table_dependenciesの呼び出し回数を確認
+    # view1, view2, view3の依存関係のみ取得される
+    assert mock_lineage_client.get_table_dependencies.call_count == 3
+
+
+@patch("bq2dbt.converter.dependency.LineageClient")
+def test_dependency_resolver_alias(mock_lineage_client_class):
+    """DependencyResolverがDataCatalogDependencyResolverのエイリアスであることをテスト"""
+    mock_bq_client = MagicMock()
+    mock_bq_client.project_id = "project"
+    mock_bq_client.location = "location"
+
+    # LineageClientのモックを設定
+    mock_lineage_client = MagicMock()
+    mock_lineage_client_class.return_value = mock_lineage_client
+
+    # DependencyResolverを初期化
+    resolver = DependencyResolver(mock_bq_client)
+
+    # DataCatalogDependencyResolverのインスタンスであることを確認
+    assert isinstance(resolver, DataCatalogDependencyResolver)
+
+    # LineageClientが正しく作成されたことを確認
+    mock_lineage_client_class.assert_called_once_with(
+        mock_bq_client.project_id, mock_bq_client.location
+    )

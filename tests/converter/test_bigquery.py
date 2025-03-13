@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from bq2dbt.converter.bigquery import BigQueryClient
+from bq2dbt.converter.lineage import LineageClient
 
 
 # モックを使用したテスト
@@ -171,8 +172,8 @@ def test_get_table_dependencies(mock_lineage_client_class):
     mock_page_result.__iter__.return_value = [mock_link1, mock_link2]
     mock_lineage_client.search_links.return_value = mock_page_result
 
-    # BigQueryクライアントを初期化
-    client = BigQueryClient("project")
+    # LineageClientを初期化
+    client = LineageClient("project")
 
     # 依存関係を取得
     dependencies = client.get_table_dependencies("project.dataset.view")
@@ -195,18 +196,15 @@ def test_get_table_dependencies(mock_lineage_client_class):
 
 def test_get_table_dependencies_error_handling():
     """テーブル依存関係の取得時のエラーハンドリングをテスト"""
-    with patch("bq2dbt.converter.bigquery.bigquery.Client") as mock_bq_client, patch(
-        "bq2dbt.converter.bigquery.datacatalog_lineage_v1.LineageClient"
+    with patch(
+        "google.cloud.datacatalog_lineage_v1.LineageClient"
     ) as mock_lineage_client:
-        # BigQueryクライアントのモック
-        mock_bq_instance = mock_bq_client.return_value
-
         # LineageClientのモック - 例外をスロー
         mock_lineage_instance = mock_lineage_client.return_value
         mock_lineage_instance.search_links.side_effect = Exception("API error")
 
         # テスト対象インスタンスの作成
-        client = BigQueryClient("test-project")
+        client = LineageClient("test-project")
 
         # テスト実行 - エラーが発生しても空リストが返されることを確認
         result = client.get_table_dependencies("test-project.test_dataset.test_view")

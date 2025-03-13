@@ -3,8 +3,9 @@
 BigQueryビュー間の依存関係を解析し、変換順序を決定します。
 """
 
+import abc
 import logging
-from collections import defaultdict, deque
+from collections import defaultdict
 from typing import Callable, Dict, List, Optional, Set, Tuple
 
 from rich.console import Console
@@ -12,31 +13,32 @@ from rich.table import Table
 from rich.tree import Tree
 
 from bq2dbt.converter.bigquery import BigQueryClient
+from bq2dbt.converter.lineage import LineageClient
 
 logger = logging.getLogger(__name__)
 
 
-class DependencyResolver:
-    """ビュー間の依存関係を解析するクラス。"""
+class DependencyResolverBase(abc.ABC):
+    """依存関係解析の基底クラス。
 
-    def __init__(self, bq_client: BigQueryClient):
-        """依存関係リゾルバーを初期化します。
+    このクラスは依存関係解析の共通インターフェースを定義します。
+    具体的な実装は派生クラスで行います。
+    """
 
-        Args:
-            bq_client: BigQueryクライアント
-        """
-        self.bq_client = bq_client
+    def __init__(self) -> None:
+        """依存関係リゾルバーの基底クラスを初期化します。"""
         self.dependency_graph: Dict[str, List[str]] = {}  # ビュー名 -> 依存先リスト
         self.reverse_graph: Dict[str, List[str]] = defaultdict(
             list
         )  # 依存先 -> 依存元リスト
+        logger.debug("依存関係リゾルバー基底クラスを初期化しました")
 
-        logger.debug("依存関係リゾルバーを初期化しました")
-
+    @abc.abstractmethod
     def analyze_dependencies(
         self,
         views: List[str],
         target_dataset_id: str,
+        max_depth: int = 3,
         status_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> Tuple[List[str], Dict[str, List[str]]]:
         """指定されたビューリストの依存関係を解析し、変換に必要なビューリストを作成します。
@@ -44,150 +46,13 @@ class DependencyResolver:
         Args:
             views: 分析対象のビューのリスト（project.dataset.table形式）
             target_dataset_id: 変換対象のデータセットID
-            status_callback: 処理状況を通知するコールバック関数。
-                             引数は (現在処理中のビュー, 処理済みビュー数, 全ビュー数)
+            max_depth: 依存関係を追跡する最大深さ
+            status_callback: 処理状況を通知するコールバック関数
 
         Returns:
             (拡張されたビューリスト, 依存関係グラフ)のタプル
-            拡張されたビューリストには、指定されたビューと、それらが依存する他のビューが含まれます
         """
-        logger.info(f"{len(views)}個のビューの依存関係を分析します")
-
-        # 対象データセットの完全修飾パターン
-        project_id = self.bq_client.project_id
-        target_pattern = f"{project_id}.{target_dataset_id}."
-
-        # 必要なビューを追跡するセット（重複を避けるため）
-        # 最初に指定されたビューをすべて追加
-        required_views: Set[str] = set(views)
-        processed_views: Set[str] = set()
-
-        # 依存関係グラフを初期化
-        self.dependency_graph = {}
-        self.reverse_graph = defaultdict(list)
-
-        # 処理が必要なビューがなくなるまで繰り返し
-        while required_views - processed_views:
-            # 未処理のビューを1つ取得
-            view = next(iter(required_views - processed_views))
-
-            # 処理状況をコールバックで通知（コールバックが指定されている場合）
-            if status_callback:
-                status_callback(view, len(processed_views), len(required_views))
-
-            try:
-                # ビューの依存関係を取得
-                dependencies = self.bq_client.get_table_dependencies(view)
-
-                # 依存関係グラフに追加
-                self.dependency_graph[view] = dependencies
-
-                # 逆方向の依存関係も記録
-                for dep in dependencies:
-                    self.reverse_graph[dep].append(view)
-
-                    # 対象データセットに含まれる依存ビューのみを追加処理対象に含める
-                    if dep.startswith(target_pattern):
-                        required_views.add(dep)
-
-                # 処理済みとしてマーク
-                processed_views.add(view)
-
-            except Exception as e:
-                logger.error(f"ビュー {view} の依存関係解析に失敗しました: {e}")
-                # エラーが発生したビューは依存関係がないものとして処理
-                self.dependency_graph[view] = []
-                processed_views.add(view)
-
-        # 最終状態をコールバックで通知
-        if status_callback:
-            status_callback("完了", len(processed_views), len(required_views))
-
-        # セットをリストに変換
-        result_views = list(required_views)
-
-        logger.info(f"依存関係解析が完了しました。対象ビュー数: {len(result_views)}")
-        return result_views, self.dependency_graph
-
-    def build_dependency_graph(self, views: List[str]) -> Dict[str, List[str]]:
-        """依存関係グラフを構築します。
-
-        Args:
-            views: 分析対象のビューのリスト
-
-        Returns:
-            依存関係グラフ（ビュー名 -> 依存先リスト）
-        """
-        logger.info(f"{len(views)}個のビューの依存関係を分析します")
-
-        # 依存関係グラフを初期化
-        self.dependency_graph = {}
-        self.reverse_graph = defaultdict(list)
-
-        # 各ビューの依存関係を取得
-        for view in views:
-            try:
-                # BigQueryクライアントを使用して依存先を取得
-                dependencies = self.bq_client.get_table_dependencies(view)
-
-                # 依存先のうち、対象ビューリストに含まれるもののみを保持
-                filtered_deps = [dep for dep in dependencies if dep in views]
-
-                # 依存関係グラフに追加
-                self.dependency_graph[view] = filtered_deps
-
-                # 逆方向の依存関係も記録
-                for dep in filtered_deps:
-                    self.reverse_graph[dep].append(view)
-            except Exception as e:
-                logger.error(f"ビュー {view} の依存関係解析に失敗しました: {e}")
-                # エラーが発生したビューは依存関係がないものとして処理
-                self.dependency_graph[view] = []
-
-        logger.debug(
-            f"依存関係グラフを構築しました: {len(self.dependency_graph)}個のノード"
-        )
-        return self.dependency_graph
-
-    def get_topological_order(self) -> List[str]:
-        """トポロジカルソートによる変換順序を取得します。
-
-        Returns:
-            ビューの変換順序（依存関係の順にソート）
-
-        Raises:
-            ValueError: 循環参照がある場合
-        """
-        if not self.dependency_graph:
-            raise ValueError("依存関係グラフが構築されていません")
-
-        # 入力次数（各ノードが依存しているノードの数）を計算
-        in_degree = {node: 0 for node in self.dependency_graph}
-        for node, deps in self.dependency_graph.items():
-            for dep in deps:
-                in_degree[dep] = in_degree.get(dep, 0) + 1
-
-        # 入力次数が0のノードをキューに追加
-        queue = deque([node for node, degree in in_degree.items() if degree == 0])
-
-        # トポロジカルソート
-        result = []
-        while queue:
-            node = queue.popleft()
-            result.append(node)
-
-            # 依存先の入力次数を減らす
-            for dep in self.dependency_graph.get(node, []):
-                in_degree[dep] -= 1
-                if in_degree[dep] == 0:
-                    queue.append(dep)
-
-        # すべてのノードが結果に含まれていない場合は循環参照がある
-        if len(result) != len(self.dependency_graph):
-            raise ValueError("循環参照が検出されました")
-
-        # 結果を逆順にして返す（依存先から順に変換するため）
-        return result[::-1]
+        pass
 
     def get_dependent_views(self, view: str) -> List[str]:
         """指定したビューに依存しているビューのリストを取得します。
@@ -264,3 +129,171 @@ class DependencyResolver:
 
         add_dependencies(root_view, tree)
         return tree
+
+    def get_topological_order(self) -> List[str]:
+        """依存関係に基づいた変換順序を取得します。
+
+        Returns:
+            ビューの変換順序（依存関係の順にソート）
+        """
+        if not self.dependency_graph:
+            raise ValueError("依存関係グラフが構築されていません")
+
+        # 依存関係の逆順で返す（依存先から順に変換するため）
+        # 単純に依存関係の深さでソート
+        view_depth: Dict[str, int] = {}
+
+        # 初期化：すべてのビューの深さを0に設定
+        for view in self.dependency_graph:
+            view_depth[view] = 0
+
+        # 各ビューの深さを計算
+        for view, deps in self.dependency_graph.items():
+            for dep in deps:
+                view_depth[dep] = max(view_depth.get(dep, 0), view_depth[view] + 1)
+
+        # 深さでソート
+        return sorted(
+            self.dependency_graph.keys(),
+            key=lambda v: view_depth.get(v, 0),
+            reverse=True,
+        )
+
+
+class DataCatalogDependencyResolver(DependencyResolverBase):
+    """Google Cloud Data Catalog Lineage APIを使用した依存関係解析クラス。"""
+
+    def __init__(
+        self, bq_client: BigQueryClient, lineage_client: LineageClient
+    ) -> None:
+        """Data Catalog Lineage APIを使用した依存関係リゾルバーを初期化します。
+
+        Args:
+            bq_client: BigQueryクライアント
+            lineage_client: Lineageクライアント
+        """
+        super().__init__()
+        self.bq_client = bq_client
+        self.lineage_client = lineage_client
+        logger.debug("Data Catalog依存関係リゾルバーを初期化しました")
+
+    def analyze_dependencies(
+        self,
+        views: List[str],
+        target_dataset_id: str,
+        max_depth: int = 3,
+        status_callback: Optional[Callable[[str, int, int], None]] = None,
+    ) -> Tuple[List[str], Dict[str, List[str]]]:
+        """指定されたビューリストの依存関係を解析し、変換に必要なビューリストを作成します。
+
+        Args:
+            views: 分析対象のビューのリスト（project.dataset.table形式）
+            target_dataset_id: 変換対象のデータセットID
+            max_depth: 依存関係を追跡する最大深さ
+            status_callback: 処理状況を通知するコールバック関数
+
+        Returns:
+            (拡張されたビューリスト, 依存関係グラフ)のタプル
+        """
+        logger.info(
+            f"{len(views)}個のビューの依存関係を分析します（最大深さ: {max_depth}）"
+        )
+
+        # 対象データセットの完全修飾パターン
+        project_id = self.bq_client.project_id
+        target_pattern = f"{project_id}.{target_dataset_id}."
+
+        # 必要なビューを追跡するセット（重複を避けるため）
+        required_views: Set[str] = set(views)
+        processed_views: Set[str] = set()
+
+        # 依存関係グラフを初期化
+        self.dependency_graph = {}
+        self.reverse_graph = defaultdict(list)
+
+        # 各ビューの深さを追跡
+        view_depth: Dict[str, int] = {view: 0 for view in views}
+
+        # 処理キュー
+        queue = [(view, 0) for view in views]  # (ビュー名, 現在の深さ)
+
+        # 処理済みビュー数
+        processed_count = 0
+        total_count = len(queue)
+
+        # キューが空になるまで処理
+        while queue:
+            view, depth = queue.pop(0)
+
+            # 最大深さに達した場合はスキップ
+            if depth > max_depth:
+                continue
+
+            # 既に処理済みの場合はスキップ
+            if view in processed_views:
+                continue
+
+            # 処理状況をコールバックで通知
+            if status_callback:
+                status_callback(view, processed_count, total_count)
+
+            try:
+                # ビューの依存関係を取得
+                dependencies = self.lineage_client.get_table_dependencies(view)
+
+                # 依存関係グラフに追加
+                self.dependency_graph[view] = dependencies
+
+                # 逆方向の依存関係も記録
+                for dep in dependencies:
+                    self.reverse_graph[dep].append(view)
+
+                    # 対象データセットに含まれる依存ビューのみを追加処理対象に含める
+                    if dep.startswith(target_pattern):
+                        required_views.add(dep)
+
+                        # まだ処理していないビューで、最大深さに達していない場合はキューに追加
+                        if dep not in processed_views and depth + 1 <= max_depth:
+                            queue.append((dep, depth + 1))
+                            view_depth[dep] = depth + 1
+                            total_count += 1
+
+                # 処理済みとしてマーク
+                processed_views.add(view)
+                processed_count += 1
+
+            except Exception as e:
+                logger.error(f"ビュー {view} の依存関係解析に失敗しました: {e}")
+                # エラーが発生したビューは依存関係がないものとして処理
+                self.dependency_graph[view] = []
+                processed_views.add(view)
+                processed_count += 1
+
+        # 最終状態をコールバックで通知
+        if status_callback:
+            status_callback("完了", processed_count, total_count)
+
+        # セットをリストに変換
+        result_views = list(required_views)
+
+        logger.info(f"依存関係解析が完了しました。対象ビュー数: {len(result_views)}")
+        return result_views, self.dependency_graph
+
+
+# 後方互換性のために元のクラス名を維持
+class DependencyResolver(DataCatalogDependencyResolver):
+    """後方互換性のためのエイリアスクラス。
+
+    このクラスはDataCatalogDependencyResolverの単なるエイリアスです。
+    """
+
+    def __init__(self, bq_client: BigQueryClient) -> None:
+        """後方互換性のためのコンストラクタ。
+
+        Args:
+            bq_client: BigQueryクライアント
+        """
+        # 同じプロジェクトとロケーションでLineageClientを作成
+        lineage_client = LineageClient(bq_client.project_id, bq_client.location)
+        super().__init__(bq_client, lineage_client)
+        logger.debug("後方互換性のためのDependencyResolverを初期化しました")

@@ -14,6 +14,7 @@ from rich.table import Table
 from bq2dbt.converter.bigquery import BigQueryClient
 from bq2dbt.converter.dependency import DependencyResolver
 from bq2dbt.converter.generator import ModelGenerator
+from bq2dbt.converter.lineage import LineageClient
 from bq2dbt.utils.logger import setup_logging
 from bq2dbt.utils.naming import NamingPreset, generate_model_filename
 
@@ -25,32 +26,6 @@ def import_cmd() -> None:
     指定したデータセットからビューを検出し、dbtモデルに変換します。
     """
     pass
-
-
-def setup_output_directory(
-    output_dir: str, non_interactive: bool, logger: Any
-) -> Optional[Path]:
-    """出力ディレクトリを設定し、必要に応じて作成します。
-
-    Args:
-        output_dir: 出力ディレクトリのパス
-        non_interactive: インタラクティブモードを無効化するかどうか
-        logger: ロガーインスタンス
-
-    Returns:
-        Path: 出力ディレクトリのPathオブジェクト、作成に失敗した場合はNone
-    """
-    output_path = Path(output_dir)
-    if not output_path.exists():
-        if non_interactive or not Confirm.ask(
-            f"出力ディレクトリ {output_dir} が存在しません。作成しますか？",
-            default=True,
-        ):
-            logger.error(f"出力ディレクトリが存在しません: {output_dir}")
-            return None
-        output_path.mkdir(parents=True)
-        logger.info(f"出力ディレクトリを作成しました: {output_dir}")
-    return output_path
 
 
 def initialize_bigquery_client(
@@ -66,8 +41,27 @@ def initialize_bigquery_client(
     Returns:
         BigQueryClient: 初期化されたBigQueryクライアント
     """
-    with console.status("[bold green]BigQueryに接続しています...") as status:
-        return BigQueryClient(project_id, location=location)
+    with console.status("[bold blue]BigQueryクライアントを初期化しています..."):
+        bq_client = BigQueryClient(project_id, location=location)
+    return bq_client
+
+
+def initialize_lineage_client(
+    project_id: str, location: str, console: Console
+) -> LineageClient:
+    """Lineageクライアントを初期化します。
+
+    Args:
+        project_id: Google Cloudプロジェクト
+        location: Google Cloudのロケーション
+        console: Richコンソールインスタンス
+
+    Returns:
+        LineageClient: 初期化されたLineageクライアント
+    """
+    with console.status("[bold blue]Lineageクライアントを初期化しています..."):
+        lineage_client = LineageClient(project_id, location)
+    return lineage_client
 
 
 def fetch_views(
@@ -78,36 +72,38 @@ def fetch_views(
     console: Console,
     project_id: str,
 ) -> Optional[List[str]]:
-    """指定したデータセットからビュー一覧を取得します。
+    """データセットからビュー一覧を取得します。
 
     Args:
         bq_client: BigQueryクライアント
         dataset: データセットID
-        include_patterns: インポートするビューのパターン
-        exclude_patterns: インポートから除外するビューのパターン
+        include_patterns: 含めるビューのパターン
+        exclude_patterns: 除外するビューのパターン
         console: Richコンソールインスタンス
         project_id: BigQueryプロジェクトID
 
     Returns:
-        List[str]: 取得したビュー一覧、ビューが見つからない場合はNone
+        Optional[List[str]]: ビュー一覧、エラー時はNone
     """
-    with console.status(
-        f"[bold green]データセット {dataset} からビュー一覧を取得しています..."
-    ) as status:
-        views = bq_client.list_views(
-            dataset,
-            include_patterns=include_patterns,
-            exclude_patterns=exclude_patterns,
-        )
+    try:
+        with console.status("[bold blue]ビュー一覧を取得しています..."):
+            views = bq_client.list_views(
+                dataset,
+                include_patterns=include_patterns,
+                exclude_patterns=exclude_patterns,
+            )
 
-    if not views:
-        console.print(
-            f"[bold yellow]データセット {project_id}.{dataset} にビューが見つかりませんでした。[/bold yellow]"
-        )
+        if not views:
+            console.print(
+                f"[bold red]データセット {project_id}.{dataset} にビューが見つかりませんでした。[/bold red]"
+            )
+            return None
+
+        return views
+
+    except Exception as e:
+        console.print(f"[bold red]ビュー一覧の取得に失敗しました: {e}[/bold red]")
         return None
-
-    console.print(f"[green]{len(views)}個のビューが見つかりました。[/green]")
-    return views
 
 
 def display_views_table(
@@ -121,13 +117,17 @@ def display_views_table(
         dataset: データセットID
         console: Richコンソールインスタンス
     """
-    table = Table(title=f"データセット {project_id}.{dataset} のビュー一覧")
+    console.print(
+        f"\n[bold]データセット {project_id}.{dataset} から{len(views)}個のビューを検出しました:[/bold]"
+    )
+
+    # ビュー一覧をテーブル形式で表示
+    table = Table(title=f"検出されたビュー一覧 ({project_id}.{dataset})")
     table.add_column("No.", style="cyan")
     table.add_column("ビュー名", style="green")
 
     for i, view in enumerate(views, 1):
-        _, _, view_name = view.split(".")
-        table.add_row(str(i), view_name)
+        table.add_row(str(i), view)
 
     console.print(table)
 
@@ -141,24 +141,61 @@ def initialize_model_generator(
     """モデルジェネレーターを初期化します。
 
     Args:
-        output_path: 出力ディレクトリのPathオブジェクト
-        sql_template: SQLモデル用のカスタムテンプレートファイル
-        yml_template: YAMLモデル用のカスタムテンプレートファイル
+        output_path: 出力先ディレクトリ
+        sql_template: SQLテンプレートファイルパス
+        yml_template: YAMLテンプレートファイルパス
         console: Richコンソールインスタンス
 
     Returns:
         ModelGenerator: 初期化されたモデルジェネレーター
     """
-    with console.status(
-        "[bold green]モデルジェネレーターを初期化しています..."
-    ) as status:
+    with console.status("[bold blue]モデルジェネレーターを初期化しています..."):
+        # テンプレートパスをPathオブジェクトに変換
         sql_template_path = Path(sql_template) if sql_template else None
         yml_template_path = Path(yml_template) if yml_template else None
-        return ModelGenerator(
+
+        # モデルジェネレーターを初期化
+        generator = ModelGenerator(
             output_dir=output_path,
             sql_template_path=sql_template_path,
             yml_template_path=yml_template_path,
         )
+
+    return generator
+
+
+def setup_output_directory(
+    output_dir: str, non_interactive: bool, logger: Any
+) -> Optional[Path]:
+    """出力ディレクトリを設定します。
+
+    Args:
+        output_dir: 出力先ディレクトリパス
+        non_interactive: インタラクティブモードを無効化するかどうか
+        logger: ロガーインスタンス
+
+    Returns:
+        Optional[Path]: 出力先ディレクトリのPathオブジェクト、キャンセル時はNone
+    """
+    output_path = Path(output_dir)
+
+    # ディレクトリが存在しない場合は作成
+    if not output_path.exists():
+        try:
+            output_path.mkdir(parents=True)
+            logger.info(f"出力ディレクトリを作成しました: {output_path}")
+        except Exception as e:
+            logger.error(f"ディレクトリの作成に失敗しました: {e}")
+            return None
+    else:
+        # 既存ディレクトリの場合は確認
+        if not non_interactive and not Confirm.ask(
+            f"出力先ディレクトリ '{output_path}' は既に存在します。続行しますか？"
+        ):
+            logger.info("ユーザーによりキャンセルされました")
+            return None
+
+    return output_path
 
 
 def analyze_dependencies(
@@ -255,12 +292,15 @@ def display_added_views(added_views: List[str], console: Console) -> None:
 
 
 def display_ordered_views(ordered_views: List[str], console: Console) -> None:
-    """ビューの変換順序を表示します。
+    """変換順序を表示します。
 
     Args:
-        ordered_views: 変換順序のビュー一覧
+        ordered_views: 変換順序のリスト
         console: Richコンソールインスタンス
     """
+    console.print("\n[bold]ビューの変換順序:[/bold]")
+
+    # 変換順序の表示
     order_table = Table(title="ビューの変換順序")
     order_table.add_column("順序", style="cyan")
     order_table.add_column("ビュー名", style="green")
@@ -272,31 +312,37 @@ def display_ordered_views(ordered_views: List[str], console: Console) -> None:
 
 
 def check_file_exists(
-    view: str, naming_preset_enum: NamingPreset, output_path: Path
-) -> Tuple[bool, bool, Path, Path]:
-    """ビューに対応するSQLとYAMLファイルが存在するかをチェックします。
+    view: str, naming_preset: NamingPreset, output_path: Path
+) -> Tuple[bool, bool, str, str]:
+    """ファイルが既に存在するかどうかを確認します。
 
     Args:
-        view: ビュー名 (project.dataset.table形式)
-        naming_preset_enum: 命名規則
-        output_path: 出力ディレクトリのPathオブジェクト
+        view: ビュー名
+        naming_preset: 命名規則
+        output_path: 出力先ディレクトリ
 
     Returns:
-        Tuple[bool, bool, Path, Path]: SQLファイル存在フラグ, YAMLファイル存在フラグ, SQLファイルパス, YAMLファイルパス
+        Tuple[bool, bool, str, str]: (SQLファイルが存在するか, YAMLファイルが存在するか, SQLファイルパス, YAMLファイルパス)
     """
-    sql_file = generate_model_filename(view, naming_preset_enum, extension="sql")
-    yml_file = generate_model_filename(view, naming_preset_enum, extension="yml")
+    # ファイル名を生成
+    sql_filename = generate_model_filename(view, naming_preset, extension="sql")
+    yml_filename = generate_model_filename(view, naming_preset, extension="yml")
 
-    sql_path = output_path / sql_file
-    yml_path = output_path / yml_file
+    # ファイルパスを生成
+    sql_path = output_path / sql_filename
+    yml_path = output_path / yml_filename
 
-    return sql_path.exists(), yml_path.exists(), sql_path, yml_path
+    # ファイルの存在確認
+    sql_exists = sql_path.exists()
+    yml_exists = yml_path.exists()
+
+    return sql_exists, yml_exists, str(sql_path), str(yml_path)
 
 
 def confirm_view_import(
     view: str, files_exist: bool, existing_files: List[str], non_interactive: bool
 ) -> Tuple[bool, bool]:
-    """ビューのインポートと上書きを確認します。
+    """ビューのインポートを確認します。
 
     Args:
         view: ビュー名
@@ -305,32 +351,28 @@ def confirm_view_import(
         non_interactive: インタラクティブモードを無効化するかどうか
 
     Returns:
-        Tuple[bool, bool]: インポートするかどうか, 上書きするかどうか
+        Tuple[bool, bool]: (インポートするかどうか, 上書きするかどうか)
     """
     # 非インタラクティブモードの場合は常にインポートして上書き
     if non_interactive:
         return True, True
 
-    # 既存ファイルがある場合は上書き確認を一緒に行う
-    if files_exist:
-        overwrite_message = (
-            f" [yellow](既存ファイル: {', '.join(existing_files)})[/yellow]"
-        )
-        import_this_view = Confirm.ask(
-            f"ビュー [bold cyan]{view}[/bold cyan] をインポートしますか？{overwrite_message}",
-            default=True,
-        )
+    # ファイルが存在しない場合は確認なしでインポート
+    if not files_exist:
+        return True, False
 
-        if import_this_view:
-            overwrite = Confirm.ask("既存のファイルを上書きしますか？", default=True)
-            return import_this_view, overwrite
+    # ファイルが存在する場合は確認
+    print(f"\nビュー: {view}")
+    print(f"既存ファイル: {', '.join(existing_files)}")
+
+    # インポートするかどうかを確認
+    import_this_view = Confirm.ask("このビューをインポートしますか？", default=True)
+    if not import_this_view:
         return False, False
 
-    # 既存ファイルがない場合はインポートのみ確認
-    return Confirm.ask(
-        f"ビュー [bold cyan]{view}[/bold cyan] をインポートしますか？",
-        default=True,
-    ), True
+    # 上書きするかどうかを確認
+    overwrite = Confirm.ask("既存のファイルを上書きしますか？", default=True)
+    return True, overwrite
 
 
 def convert_view(
@@ -417,55 +459,44 @@ def display_conversion_results(
         dry_run: ドライランモードかどうか
         console: Richコンソールインスタンス
     """
+    # 変換結果のサマリーを表示
+    console.print("\n[bold]変換結果:[/bold]")
     console.print(
-        f"\n[bold green]変換完了！[/bold green] {len(converted_models)}個のビューを変換しました。"
+        f"変換されたモデル: {len(converted_models)}個, スキップされたビュー: {len(skipped_views)}個"
     )
 
-    if skipped_views:
-        console.print(
-            f"[bold yellow]{len(skipped_views)}個のビューがスキップされました。[/bold yellow]"
-        )
-
+    # ドライランモードの場合は注意書きを表示
     if dry_run:
         console.print(
-            "[bold yellow]注意: ドライランモードのため、実際にはファイルは生成されていません。[/bold yellow]"
+            "[yellow]注意: ドライランモードのため、実際にはファイルは生成されていません。[/yellow]"
         )
 
-    # 変換されたモデルの一覧表示
+    # 変換されたモデルの表示
     if converted_models:
-        table = Table(title="変換されたモデル")
-        table.add_column("No.", style="cyan")
-        table.add_column("ビュー名", style="green")
-        table.add_column("SQLモデル", style="blue")
-        table.add_column("YAMLモデル", style="magenta")
+        converted_table = Table(title="変換されたモデル")
+        converted_table.add_column("No.", style="cyan")
+        converted_table.add_column("ビュー名", style="green")
+        converted_table.add_column("SQLファイル", style="blue")
+        converted_table.add_column("YAMLファイル", style="magenta")
 
         for i, (view, sql_path, yml_path) in enumerate(converted_models, 1):
-            _, _, view_name = view.split(".")
-            table.add_row(
-                str(i),
-                view_name,
-                os.path.basename(sql_path),
-                os.path.basename(yml_path),
+            converted_table.add_row(
+                str(i), view, os.path.basename(sql_path), os.path.basename(yml_path)
             )
 
-        console.print(table)
+        console.print(converted_table)
 
-    # スキップされたビューの一覧表示
+    # スキップされたビューの表示
     if skipped_views:
-        skip_table = Table(title="スキップされたビュー")
-        skip_table.add_column("No.", style="cyan")
-        skip_table.add_column("ビュー名", style="yellow")
-        skip_table.add_column("理由", style="red")
+        skipped_table = Table(title="スキップされたビュー")
+        skipped_table.add_column("No.", style="cyan")
+        skipped_table.add_column("ビュー名", style="yellow")
+        skipped_table.add_column("理由", style="red")
 
         for i, (view, reason) in enumerate(skipped_views, 1):
-            _, _, view_name = view.split(".")
-            skip_table.add_row(
-                str(i),
-                view_name,
-                reason,
-            )
+            skipped_table.add_row(str(i), view, reason)
 
-        console.print(skip_table)
+        console.print(skipped_table)
 
 
 @import_cmd.command(name="views")
