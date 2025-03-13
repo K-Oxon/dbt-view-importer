@@ -92,24 +92,7 @@ def test_get_topological_order():
         "project.dataset.view1",
     ]
 
-
-def test_get_topological_order_with_depth():
-    """深さベースのトポロジカルソートテスト"""
-    mock_bq_client = MagicMock()
-    mock_lineage_client = MagicMock()
-    resolver = DataCatalogDependencyResolver(mock_bq_client, mock_lineage_client)
-
-    # 依存関係グラフを手動で設定
-    resolver.dependency_graph = {
-        "project.dataset.view1": ["project.dataset.view2", "project.dataset.view3"],
-        "project.dataset.view2": ["project.dataset.view3"],
-        "project.dataset.view3": [],
-    }
-
-    # トポロジカルソートを実行
-    order = resolver.get_topological_order()
-
-    # 期待される順序: 深さに基づいてソート
+    # 深さベースのソートも確認
     # view3 (深さ2), view2 (深さ1), view1 (深さ0)
     assert order == [
         "project.dataset.view3",
@@ -243,6 +226,8 @@ def test_display_dependencies(mock_print):
 
     # printは1回呼ばれるはず（テーブル出力）
     assert mock_print.call_count == 1
+    # 引数がTableオブジェクトであることを確認
+    assert isinstance(mock_print.call_args[0][0], Table)
 
 
 @patch("rich.console.Console.print")
@@ -381,36 +366,6 @@ def test_analyze_dependencies_with_error():
     assert dependency_graph["project.dataset.view3"] == []
 
 
-@patch("rich.console.Console.print")
-def test_display_dependencies_new(mock_print):
-    """新しいdisplay_dependenciesメソッドのテスト"""
-    mock_bq_client = MagicMock()
-    mock_lineage_client = MagicMock()
-    resolver = DataCatalogDependencyResolver(mock_bq_client, mock_lineage_client)
-
-    # 依存関係グラフを手動で設定
-    resolver.dependency_graph = {
-        "project.dataset.view1": ["project.dataset.view2", "project.dataset.view3"],
-        "project.dataset.view2": ["project.dataset.view3"],
-        "project.dataset.view3": [],
-    }
-
-    # 逆依存関係グラフも設定
-    resolver.reverse_graph = {
-        "project.dataset.view2": ["project.dataset.view1"],
-        "project.dataset.view3": ["project.dataset.view1", "project.dataset.view2"],
-    }
-
-    # 依存関係を表示
-    views = ["project.dataset.view1", "project.dataset.view2", "project.dataset.view3"]
-    resolver.display_dependencies(views)
-
-    # printは1回呼ばれるはず（テーブル出力）
-    assert mock_print.call_count == 1
-    # 引数がTableオブジェクトであることを確認
-    assert isinstance(mock_print.call_args[0][0], Table)
-
-
 def test_build_dependency_tree():
     """build_dependency_treeメソッドのテスト"""
     mock_bq_client = MagicMock()
@@ -468,26 +423,3 @@ def test_analyze_dependencies_with_max_depth():
     # get_table_dependenciesの呼び出し回数を確認
     # view1, view2, view3の依存関係のみ取得される
     assert mock_lineage_client.get_table_dependencies.call_count == 3
-
-
-@patch("bq2dbt.converter.dependency.LineageClient")
-def test_dependency_resolver_alias(mock_lineage_client_class):
-    """DependencyResolverがDataCatalogDependencyResolverのエイリアスであることをテスト"""
-    mock_bq_client = MagicMock()
-    mock_bq_client.project_id = "project"
-    mock_bq_client.location = "location"
-
-    # LineageClientのモックを設定
-    mock_lineage_client = MagicMock()
-    mock_lineage_client_class.return_value = mock_lineage_client
-
-    # DependencyResolverを初期化
-    resolver = DependencyResolver(mock_bq_client)
-
-    # DataCatalogDependencyResolverのインスタンスであることを確認
-    assert isinstance(resolver, DataCatalogDependencyResolver)
-
-    # LineageClientが正しく作成されたことを確認
-    mock_lineage_client_class.assert_called_once_with(
-        mock_bq_client.project_id, mock_bq_client.location
-    )

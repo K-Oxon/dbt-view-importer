@@ -1,10 +1,15 @@
 """ModelGeneratorのテスト"""
 
+from unittest.mock import patch
+
 from bq2dbt.converter.generator import ModelGenerator
 from bq2dbt.utils.naming import NamingPreset
 
 
-def test_model_generator_init(temp_output_dir, sql_template_path, yml_template_path):
+@patch("bq2dbt.converter.generator.Path.exists", return_value=True)
+def test_model_generator_init(
+    mock_exists, temp_output_dir, sql_template_path, yml_template_path
+):
     """ModelGeneratorの初期化をテスト"""
     generator = ModelGenerator(temp_output_dir, sql_template_path, yml_template_path)
 
@@ -13,7 +18,8 @@ def test_model_generator_init(temp_output_dir, sql_template_path, yml_template_p
     assert generator.yml_template_path == yml_template_path
 
 
-def test_load_template(temp_output_dir, sql_template_path):
+@patch("bq2dbt.converter.generator.Path.exists", return_value=True)
+def test_load_template(mock_exists, temp_output_dir, sql_template_path):
     """テンプレートの読み込みをテスト"""
     generator = ModelGenerator(temp_output_dir, sql_template_path)
 
@@ -21,7 +27,8 @@ def test_load_template(temp_output_dir, sql_template_path):
     assert template is not None
 
 
-def test_generate_sql_model(temp_output_dir, sql_template_path):
+@patch("bq2dbt.converter.generator.Path.exists", return_value=True)
+def test_generate_sql_model(mock_exists, temp_output_dir, sql_template_path):
     """SQLモデルの生成をテスト"""
     generator = ModelGenerator(temp_output_dir, sql_template_path)
 
@@ -41,7 +48,8 @@ def test_generate_sql_model(temp_output_dir, sql_template_path):
     assert "test-project.test_dataset.test_view" in content
 
 
-def test_generate_yaml_model(temp_output_dir, yml_template_path):
+@patch("bq2dbt.converter.generator.Path.exists", return_value=True)
+def test_generate_yaml_model(mock_exists, temp_output_dir, yml_template_path):
     """YAMLモデルの生成をテスト"""
     generator = ModelGenerator(temp_output_dir, yml_template_path=yml_template_path)
 

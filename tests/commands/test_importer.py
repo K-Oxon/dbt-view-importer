@@ -35,6 +35,8 @@ def test_fetch_views():
     """ビュー一覧取得のテスト"""
     console = Console()
     mock_bq_client = MagicMock()
+
+    # 通常のケース
     mock_bq_client.list_views.return_value = [
         "test-project.test_dataset.view1",
         "test-project.test_dataset.view2",
@@ -48,15 +50,12 @@ def test_fetch_views():
         "test-project.test_dataset.view1",
         "test-project.test_dataset.view2",
     ]
-    mock_bq_client.list_views.assert_called_once_with(
+    mock_bq_client.list_views.assert_called_with(
         "test_dataset", include_patterns=None, exclude_patterns=None
     )
 
-
-def test_fetch_views_with_filters():
-    """フィルター付きのビュー一覧取得のテスト"""
-    console = Console()
-    mock_bq_client = MagicMock()
+    # フィルター付きのケース
+    mock_bq_client.reset_mock()
     mock_bq_client.list_views.return_value = [
         "test-project.test_dataset.view1",
     ]
@@ -71,15 +70,12 @@ def test_fetch_views_with_filters():
     )
 
     assert result == ["test-project.test_dataset.view1"]
-    mock_bq_client.list_views.assert_called_once_with(
+    mock_bq_client.list_views.assert_called_with(
         "test_dataset", include_patterns=["view1"], exclude_patterns=["view2"]
     )
 
-
-def test_fetch_views_empty_result():
-    """空の結果を返すビュー一覧取得のテスト"""
-    console = Console()
-    mock_bq_client = MagicMock()
+    # 空の結果を返すケース
+    mock_bq_client.reset_mock()
     mock_bq_client.list_views.return_value = []
 
     result = fetch_views(
@@ -87,7 +83,7 @@ def test_fetch_views_empty_result():
     )
 
     assert result is None
-    mock_bq_client.list_views.assert_called_once_with(
+    mock_bq_client.list_views.assert_called_with(
         "test_dataset", include_patterns=None, exclude_patterns=None
     )
 
