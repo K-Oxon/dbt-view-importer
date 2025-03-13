@@ -205,6 +205,7 @@ def analyze_dependencies(
     bq_client: BigQueryClient,
     console: Console,
     logger: Any,
+    max_depth: int = 3,
 ) -> Tuple[List[str], List[str]]:
     """ビュー間の依存関係を分析します。
 
@@ -215,6 +216,7 @@ def analyze_dependencies(
         bq_client: BigQueryクライアント
         console: Richコンソールインスタンス
         logger: ロガーインスタンス
+        max_depth: 依存関係を追跡する最大深さ
 
     Returns:
         Tuple[List[str], List[str]]: 全ビュー一覧と変換順序のタプル
@@ -241,7 +243,7 @@ def analyze_dependencies(
 
         # 新しい解析メソッドを使用して依存関係を分析（進捗表示機能付き）
         all_views, dependency_graph = resolver.analyze_dependencies(
-            views, dataset, status_callback=update_status
+            views, dataset, max_depth=max_depth, status_callback=update_status
         )
 
         # 新しく追加されたビューがあるか確認
@@ -542,6 +544,12 @@ def display_conversion_results(
     help="データセット外の依存ビューも含め、ビュー間の依存関係を分析する",
 )
 @click.option(
+    "--max-depth",
+    type=click.IntRange(1, 7),
+    default=3,
+    help="依存関係を追跡する最大深さ（1-7、デフォルト: 3）",
+)
+@click.option(
     "--location",
     default="asia-northeast1",
     help="Google Cloudのロケーション（デフォルト: asia-northeast1）",
@@ -563,6 +571,7 @@ def import_views(
     sql_template: Optional[str],
     yml_template: Optional[str],
     include_dependencies: bool,
+    max_depth: int,
     location: str,
     debug: bool,
 ) -> None:
@@ -581,6 +590,7 @@ def import_views(
         sql_template: SQLモデル用のカスタムテンプレートファイル
         yml_template: YAMLモデル用のカスタムテンプレートファイル
         include_dependencies: データセット外の依存ビューも含め、ビュー間の依存関係を分析するかどうか
+        max_depth: 依存関係を追跡する最大深さ
         location: Google Cloudのロケーション
         debug: デバッグモードを有効化するかどうか
     """
@@ -596,6 +606,7 @@ def import_views(
         "ドライラン": "有効" if dry_run else "無効",
         "デバッグモード": "有効" if debug else "無効",
         "依存関係分析": "有効" if include_dependencies else "無効",
+        "依存関係の最大深さ": max_depth,
         "ロケーション": location,
     }
     for key, value in options.items():
@@ -636,7 +647,7 @@ def import_views(
 
         # 依存関係の分析
         all_views, ordered_views = analyze_dependencies(
-            views, dataset, include_dependencies, bq_client, console, logger
+            views, dataset, include_dependencies, bq_client, console, logger, max_depth
         )
 
         # ビューの変換
