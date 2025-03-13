@@ -2,6 +2,7 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from bq2dbt.converter.importer import (
     analyze_dependencies,
     check_file_exists,
@@ -150,7 +151,12 @@ def test_check_file_exists():
     naming_preset = NamingPreset.DATASET_PREFIX
     output_path = Path("/tmp/output")
 
-    with patch("bq2dbt.converter.importer.Path.exists", side_effect=[True, False]):
+    with patch(
+        "bq2dbt.converter.importer.Path.exists", side_effect=[True, False]
+    ), patch(
+        "bq2dbt.converter.importer.generate_model_name",
+        return_value="test_dataset__view1",
+    ):
         sql_exists, yml_exists, sql_path, yml_path = check_file_exists(
             view, naming_preset, output_path
         )
@@ -180,6 +186,8 @@ def test_convert_view():
     """ビュー変換のテスト"""
     view = "test-project.test_dataset.view1"
     mock_bq_client = MagicMock()
+    # テーブルタイプをVIEWに設定
+    mock_bq_client.get_table_type.return_value = "VIEW"
     mock_bq_client.get_view_definition.return_value = "SELECT * FROM table"
     mock_bq_client.get_view_schema.return_value = [
         {"name": "column1", "type": "STRING"}
@@ -205,7 +213,40 @@ def test_convert_view():
     )
 
     assert result == (view, Path("/tmp/model.sql"), Path("/tmp/model.yml"))
+    mock_bq_client.get_table_type.assert_called_once_with(view)
     mock_bq_client.get_view_definition.assert_called_once_with(view)
     mock_bq_client.get_view_schema.assert_called_once_with(view)
     mock_generator.generate_sql_model.assert_called_once()
     mock_generator.generate_yaml_model.assert_called_once()
+
+
+def test_convert_view_not_a_view():
+    """ビューでないオブジェクトの変換テスト"""
+    view = "test-project.test_dataset.table1"
+    mock_bq_client = MagicMock()
+    # テーブルタイプをTABLEに設定
+    mock_bq_client.get_table_type.return_value = "TABLE"
+
+    # モックジェネレーターを作成
+    mock_generator = MagicMock()
+
+    naming_preset_enum = NamingPreset.DATASET_PREFIX
+    dry_run = False
+    debug = False
+    logger = MagicMock()
+
+    # ValueErrorが発生することを確認
+    with pytest.raises(ValueError) as excinfo:
+        convert_view(
+            view,
+            mock_bq_client,
+            mock_generator,
+            naming_preset_enum,
+            dry_run,
+            debug,
+            logger,
+        )
+
+    assert "オブジェクトはビューではありません" in str(excinfo.value)
+    mock_bq_client.get_table_type.assert_called_once_with(view)
+    mock_bq_client.get_view_definition.assert_not_called()

@@ -26,6 +26,8 @@ def test_import_views_command_basic(mock_resolver, mock_generator, mock_bq_clien
         "test-project.test_dataset.view1",
         "test-project.test_dataset.view2",
     ]
+    # テーブルタイプをVIEWに設定
+    mock_bq_instance.get_table_type.return_value = "VIEW"
 
     mock_resolver_instance = MagicMock()
     mock_resolver.return_value = mock_resolver_instance
@@ -54,7 +56,7 @@ def test_import_views_command_basic(mock_resolver, mock_generator, mock_bq_clien
     with patch("os.path.exists", return_value=True), patch(
         "bq2dbt.converter.importer.Confirm.ask", return_value=True
     ), patch("bq2dbt.converter.importer.Path.mkdir"), patch(
-        "bq2dbt.converter.importer.Path.exists", return_value=True
+        "bq2dbt.converter.importer.Path.exists", return_value=False
     ):
         runner = CliRunner()
         result = runner.invoke(
@@ -81,6 +83,8 @@ def test_import_views_command_basic(mock_resolver, mock_generator, mock_bq_clien
     )
     # 依存関係の解析が呼ばれたことを確認
     mock_resolver_instance.analyze_dependencies.assert_called_once()
+    # テーブルタイプの確認が呼ばれたことを確認
+    assert mock_bq_instance.get_table_type.call_count >= 2  # 少なくとも2回呼ばれる
     # モデル生成が呼ばれたことを確認
     assert mock_generator_instance.generate_sql_model.call_count == 2
     assert mock_generator_instance.generate_yaml_model.call_count == 2
@@ -99,6 +103,8 @@ def test_import_views_command_with_filters(
     mock_bq_instance.list_views.return_value = [
         "test-project.test_dataset.view1",
     ]
+    # テーブルタイプをVIEWに設定
+    mock_bq_instance.get_table_type.return_value = "VIEW"
 
     mock_resolver_instance = MagicMock()
     mock_resolver.return_value = mock_resolver_instance
@@ -126,7 +132,7 @@ def test_import_views_command_with_filters(
     with patch("os.path.exists", return_value=True), patch(
         "bq2dbt.converter.importer.Confirm.ask", return_value=True
     ), patch("bq2dbt.converter.importer.Path.mkdir"), patch(
-        "bq2dbt.converter.importer.Path.exists", return_value=True
+        "bq2dbt.converter.importer.Path.exists", return_value=False
     ):
         runner = CliRunner()
         result = runner.invoke(
@@ -157,6 +163,8 @@ def test_import_views_command_with_filters(
     )
     # 依存関係の解析が呼ばれたことを確認
     mock_resolver_instance.analyze_dependencies.assert_called_once()
+    # テーブルタイプの確認が呼ばれたことを確認
+    assert mock_bq_instance.get_table_type.call_count >= 1  # 少なくとも1回呼ばれる
     # モデル生成が呼ばれたことを確認
     assert mock_generator_instance.generate_sql_model.call_count == 1
     assert mock_generator_instance.generate_yaml_model.call_count == 1
@@ -176,6 +184,8 @@ def test_import_views_command_without_dependencies(
         "test-project.test_dataset.view1",
         "test-project.test_dataset.view2",
     ]
+    # テーブルタイプをVIEWに設定
+    mock_bq_instance.get_table_type.return_value = "VIEW"
 
     mock_resolver_instance = MagicMock()
     mock_resolver.return_value = mock_resolver_instance
@@ -195,7 +205,7 @@ def test_import_views_command_without_dependencies(
     with patch("os.path.exists", return_value=True), patch(
         "bq2dbt.converter.importer.Confirm.ask", return_value=True
     ), patch("bq2dbt.converter.importer.Path.mkdir"), patch(
-        "bq2dbt.converter.importer.Path.exists", return_value=True
+        "bq2dbt.converter.importer.Path.exists", return_value=False
     ):
         runner = CliRunner()
         result = runner.invoke(
@@ -221,6 +231,8 @@ def test_import_views_command_without_dependencies(
     )
     # 依存関係の解析が呼ばれないことを確認
     mock_resolver_instance.analyze_dependencies.assert_not_called()
+    # テーブルタイプの確認が呼ばれたことを確認
+    assert mock_bq_instance.get_table_type.call_count >= 2  # 少なくとも2回呼ばれる
     # モデル生成が呼ばれたことを確認
     assert mock_generator_instance.generate_sql_model.call_count == 2
     assert mock_generator_instance.generate_yaml_model.call_count == 2
