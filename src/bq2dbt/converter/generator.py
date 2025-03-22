@@ -107,7 +107,9 @@ class ModelGenerator:
 
         # モデル名とファイル名を生成
         model_name = generate_model_name(fully_qualified_name, naming_preset)
-        file_name = generate_model_filename(fully_qualified_name, naming_preset)
+        file_name = generate_model_filename(
+            fully_qualified_name, naming_preset, extension="sql"
+        )
         file_path = self.output_dir / file_name
 
         logger.debug(f"SQLモデル生成: fully_qualified_name={fully_qualified_name}")
@@ -151,6 +153,7 @@ class ModelGenerator:
         description: str = "",
         naming_preset: NamingPreset = NamingPreset.FULL,
         dry_run: bool = False,
+        yml_prefix: Optional[str] = None,
     ) -> Tuple[str, Path]:
         """YAMLモデルファイルを生成します。
 
@@ -170,7 +173,10 @@ class ModelGenerator:
         # モデル名とファイル名を生成
         model_name = generate_model_name(fully_qualified_name, naming_preset)
         file_name = generate_model_filename(
-            fully_qualified_name, naming_preset, extension="yml"
+            fully_qualified_name,
+            naming_preset,
+            extension="yml",
+            yml_prefix=yml_prefix,
         )
         file_path = self.output_dir / file_name
 

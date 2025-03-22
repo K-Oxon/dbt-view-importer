@@ -281,6 +281,7 @@ def convert_view(
     dry_run: bool,
     debug: bool,
     logger: logging.Logger,
+    yml_prefix: Optional[str] = None,
 ) -> Tuple[str, Path, Path]:
     """ビューをdbtモデルに変換します。
 
@@ -292,7 +293,8 @@ def convert_view(
         dry_run: ドライランモードかどうか
         debug: デバッグモードかどうか
         logger: ロガーオブジェクト
-
+        yml_prefix: YAMLファイルの接頭辞（デフォルト: None）
+                     e.g. "_" -> _model_name.yml
     Returns:
         (ビュー名, SQLファイルパス, YAMLファイルパス) のタプル
 
@@ -329,7 +331,7 @@ def convert_view(
 
         # YAMLモデルを生成
         yml_content, yml_path = generator.generate_yaml_model(
-            view, schema, "", naming_preset_enum, dry_run
+            view, schema, "", naming_preset_enum, dry_run, yml_prefix
         )
 
         return view, sql_path, yml_path
@@ -493,6 +495,7 @@ def import_views(
     non_interactive: bool = False,
     sql_template: Optional[str] = None,
     yml_template: Optional[str] = None,
+    yml_prefix: Optional[str] = None,
     include_dependencies: bool = False,
     location: str = "asia-northeast1",
     debug: bool = False,
@@ -511,6 +514,8 @@ def import_views(
         non_interactive: 非インタラクティブモードかどうか
         sql_template: SQLモデル用のテンプレートファイルパス
         yml_template: YAMLモデル用のテンプレートファイルパス
+        yml_prefix: YAMLファイルの接頭辞（デフォルト: None）
+                     e.g. "_" -> _model_name.yml
         include_dependencies: 依存関係にあるビューも含めるかどうか
         location: BigQueryロケーション
         debug: デバッグモードかどうか
@@ -637,7 +642,14 @@ def import_views(
         try:
             # ビューの変換
             result = convert_view(
-                view, bq_client, generator, naming_preset_enum, dry_run, debug, logger
+                view,
+                bq_client,
+                generator,
+                naming_preset_enum,
+                dry_run,
+                debug,
+                logger,
+                yml_prefix,
             )
             converted_models.append(result)
         except Exception as e:

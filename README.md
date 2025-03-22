@@ -57,13 +57,14 @@ bq2dbt import views \
   --project-id <PROJECT_ID> \
   --dataset <DATASET_ID> \
   --output-dir <OUTPUT_DIR> \
-  --naming-preset dataset_prefix \
+  --naming-preset full \
   --include-views "report_*,mart_*" \
   --exclude-views "temp_*,test_*" \
   --include-dependencies \
   --max-depth 3 \
   --sql-template <template_file> \
   --yml-template <template_file> \
+  --yml-prefix <prefix_string> \
   --location asia-northeast1 \
   --non-interactive \
   --dry-run \
@@ -90,20 +91,20 @@ bq2dbt import views \
 
 - `--naming-preset <PRESET>`
   - モデル命名規則のプリセット
-  - 選択肢: `dataset_prefix`（デフォルト）, `table_only`, `full`
-  - `dataset_prefix`: データセットプレフィックスを使用（例: `dm_sales.revenue` → `sales__revenue.sql`）
-  - `table_only`: テーブル名のみを使用（例: `dm_sales.revenue` → `revenue.sql`）
-  - `full`: データセット名とテーブル名を使用（例: `dm_sales.revenue` → `dm_sales__revenue.sql`）
+  - 選択肢: `full`（デフォルト）, `table_only`, `dataset_without_prefix`
+  - `table_only`: テーブル名のみを使用（例: `sales.revenue` → `revenue.sql`）
+  - `full`: データセット名とテーブル名を使用（例: `sales.revenue` → `sales__revenue.sql`）
+  - `dataset_without_prefix`: データセットからプレフィックスを除去しテーブル名と`__`で結合（例: `dm_sales.revenue` → `sales__revenue.sql`）
 
 ###### フィルタリングオプション
 
 - `--include-views <PATTERNS>`
   - インポート対象のビュー名パターン（カンマ区切り）
-  - 例: `--include-views "report_*,mart_*"`
+  - 例: `--include-views "*.sample_dataset.*,mart_*"`
 
 - `--exclude-views <PATTERNS>`
   - インポート対象から除外するビュー名パターン（カンマ区切り）
-  - 例: `--exclude-views "temp_*,test_*"`
+  - 例: `--exclude-views "*.temp_dataset.*,test_*"`
 
 - `--non-interactive`
   - インタラクティブな確認をスキップするフラグ
@@ -131,6 +132,10 @@ bq2dbt import views \
   - YAMLモデル用のJinja2テンプレートファイル
   - 指定しない場合はデフォルトテンプレートを使用
   - 例: `--yml-template templates/custom_model.yml`
+
+- `--yml-prefix <PREFIX_STRING>`
+  - ymlファイルの接頭辞を指定する
+  - 例: `--yml-prefix _` -> `_model_name.yml`が生成される
 
 ###### 実行オプション
 

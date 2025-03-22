@@ -2,7 +2,7 @@
 
 import re
 from enum import Enum
-from typing import Tuple
+from typing import Optional, Tuple
 
 
 class NamingPreset(str, Enum):
@@ -91,6 +91,7 @@ def generate_model_filename(
     fully_qualified_name: str,
     naming_preset: NamingPreset = NamingPreset.FULL,
     extension: str = "sql",
+    yml_prefix: Optional[str] = None,
 ) -> str:
     """BigQueryビュー名からdbtモデルのファイル名を生成する。
 
@@ -98,9 +99,13 @@ def generate_model_filename(
         fully_qualified_name: BigQueryの完全修飾名
         naming_preset: 使用する命名規則プリセット
         extension: ファイル拡張子（デフォルト: sql）
-
+        yml_prefix: YAMLファイルの接頭辞（デフォルト: None）
+                     e.g. "_" -> _model_name.yml
     Returns:
         dbtモデルのファイル名
     """
     model_name = generate_model_name(fully_qualified_name, naming_preset)
-    return f"{model_name}.{extension}"
+    if extension == "yml" and yml_prefix:
+        return f"{yml_prefix}{model_name}.yml"
+    else:
+        return f"{model_name}.{extension}"

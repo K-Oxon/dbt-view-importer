@@ -61,6 +61,10 @@ from bq2dbt.utils.naming import NamingPreset
     help="YAMLモデル用のJinja2テンプレートファイル",
 )
 @click.option(
+    "--yml-prefix",
+    help="YAMLモデルの接頭辞(e.g. '_' -> _model_name.yml)",
+)
+@click.option(
     "--include-dependencies",
     is_flag=True,
     help="依存関係にあるビューも含めてインポート",
@@ -94,6 +98,7 @@ def import_views(
     non_interactive: bool,
     sql_template: Optional[str],
     yml_template: Optional[str],
+    yml_prefix: Optional[str],
     include_dependencies: bool,
     location: str,
     debug: bool,
@@ -125,6 +130,7 @@ def import_views(
         non_interactive=non_interactive,
         sql_template=sql_template,
         yml_template=yml_template,
+        yml_prefix=yml_prefix,
         include_dependencies=include_dependencies,
         location=location,
         debug=debug,
