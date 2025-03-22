@@ -331,3 +331,71 @@
   - 参照パターン検出方法
   - 依存関係情報を活用した変換ルール
   - エッジケース対応 
+
+## 2024-03-22: filter_views 関数の改修
+
+### 改修内容
+`filter_views` 関数をFQN (Fully Qualified Name) 全体に対するパターンマッチングに対応するよう改修しました。
+
+#### 問題点
+- 以前の実装では、view名部分のみのマッチングに対応していた
+- 新しいテストケースではFQN全体 (`project.dataset.view`) に対するマッチングが必要
+- 既存のテストと新テストの両方に対応する必要があった
+
+#### 解決策
+1. `filter_views` 関数を以下のように修正:
+   - パターン内に `.` が含まれている場合はFQN全体 (`project.dataset.view`) に対してマッチング
+   - パターン内に `.` が含まれていない場合はview部分のみに対してマッチング (後方互換性のため)
+
+2. テストケースを整理:
+   - 既存の `tests/commands/test_importer.py` から新しいFQNパターンマッチングテストを
+   - 正しい場所である `tests/converter/test_importer.py` に統合
+
+#### 改修後のコード
+```python
+def filter_views(
+    views: List[str],
+    include_patterns: Optional[List[str]] = None,
+    exclude_patterns: Optional[List[str]] = None,
+    logger: Optional[logging.Logger] = None,
+) -> List[str]:
+    """ビュー一覧に対してinclude/excludeパターンによるフィルタリングを適用します。"""
+    # ... 既存コード ...
+    
+    filtered_views = []
+    for view in views:
+        parts = view.split(".")
+        if len(parts) != 3:
+            if logger:
+                logger.warning(f"無効なビュー名形式: {view}")
+            continue
+
+        project, dataset, view_name = parts
+
+        # 含めるパターンによるフィルタリング
+        if include_patterns:
+            include_match = False
+            for pattern in include_patterns:
+                # パターンに"."が含まれている場合はFQN全体に対してマッチング
+                if "." in pattern:
+                    # FQN全体に対してパターンマッチング
+                    if _match_pattern(view, pattern):
+                        include_match = True
+                        break
+                else:
+                    # view部分のみに対してパターンマッチング（後方互換性のため）
+                    if _match_pattern(view_name, pattern):
+                        include_match = True
+                        break
+            # ... 以下同様 ...
+```
+
+#### ユースケース例
+この改修により、以下のようなパターンマッチングが可能になりました:
+
+1. 特定のデータセット内のすべてのビュー: `*.dataset1.*`
+2. 特定のプロジェクト内のすべてのビュー: `project1.*.*`
+3. 特定のパターンに一致するデータセット内のビュー: `*.sample_dataset_*.*`
+4. 特定のプロジェクトとデータセット内の特定パターンのビュー: `project1.dataset1.view*`
+
+これにより、ユーザーはより柔軟にビューをフィルタリングできるようになりました。 
