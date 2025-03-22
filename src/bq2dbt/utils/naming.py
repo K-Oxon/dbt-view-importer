@@ -8,9 +8,11 @@ from typing import Tuple
 class NamingPreset(str, Enum):
     """命名規則プリセット。"""
 
-    DATASET_PREFIX = "dataset_prefix"  # データセットプレフィックスを使用
-    TABLE_ONLY = "table_only"  # テーブル名のみを使用
     FULL = "full"  # データセット名とテーブル名を使用
+    TABLE_ONLY = "table_only"  # テーブル名のみを使用
+    DATASET_WITHOUT_PREFIX = (
+        "dataset_without_prefix"  # データセットプレフィックスを使用
+    )
 
 
 def parse_bigquery_name(fully_qualified_name: str) -> Tuple[str, str, str]:
@@ -60,7 +62,7 @@ def extract_dataset_prefix(dataset_name: str) -> str:
 
 
 def generate_model_name(
-    fully_qualified_name: str, naming_preset: NamingPreset = NamingPreset.DATASET_PREFIX
+    fully_qualified_name: str, naming_preset: NamingPreset = NamingPreset.FULL
 ) -> str:
     """BigQueryビュー名からdbtモデル名を生成する。
 
@@ -79,7 +81,7 @@ def generate_model_name(
     elif naming_preset == NamingPreset.FULL:
         # データセット名とテーブル名を使用
         return f"{dataset}__{table}"
-    else:  # DATASET_PREFIX がデフォルト
+    else:
         # データセットプレフィックスを抽出して使用
         dataset_prefix = extract_dataset_prefix(dataset)
         return f"{dataset_prefix}__{table}"
@@ -87,7 +89,7 @@ def generate_model_name(
 
 def generate_model_filename(
     fully_qualified_name: str,
-    naming_preset: NamingPreset = NamingPreset.DATASET_PREFIX,
+    naming_preset: NamingPreset = NamingPreset.FULL,
     extension: str = "sql",
 ) -> str:
     """BigQueryビュー名からdbtモデルのファイル名を生成する。

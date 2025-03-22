@@ -29,8 +29,8 @@ from bq2dbt.utils.naming import NamingPreset
 @click.option(
     "--naming-preset",
     type=click.Choice([p.value for p in NamingPreset]),
-    default=NamingPreset.DATASET_PREFIX.value,
-    help="モデル命名規則のプリセット",
+    default=NamingPreset.FULL.value,
+    help="モデル命名規則のプリセット full: dataset__table.sql, table_only: table.sql, dataset_without_postfix: dm_dataset.table -> dataset__table.sql",
 )
 @click.option(
     "--dry-run",

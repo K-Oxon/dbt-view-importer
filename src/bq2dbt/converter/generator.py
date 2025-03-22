@@ -88,7 +88,7 @@ class ModelGenerator:
         self,
         fully_qualified_name: str,
         sql_definition: str,
-        naming_preset: NamingPreset = NamingPreset.DATASET_PREFIX,
+        naming_preset: NamingPreset = NamingPreset.FULL,
         dry_run: bool = False,
     ) -> Tuple[str, Path]:
         """SQLモデルファイルを生成します。
@@ -149,7 +149,7 @@ class ModelGenerator:
         fully_qualified_name: str,
         schema_fields: List[Dict[str, str]],
         description: str = "",
-        naming_preset: NamingPreset = NamingPreset.DATASET_PREFIX,
+        naming_preset: NamingPreset = NamingPreset.FULL,
         dry_run: bool = False,
     ) -> Tuple[str, Path]:
         """YAMLモデルファイルを生成します。

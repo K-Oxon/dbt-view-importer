@@ -146,7 +146,7 @@ def test_analyze_dependencies_without_dependencies():
 def test_check_file_exists():
     """ファイル存在確認のテスト"""
     view = "test-project.test_dataset.view1"
-    naming_preset = NamingPreset.DATASET_PREFIX
+    naming_preset = NamingPreset.FULL
     output_path = Path("/tmp/output")
 
     with patch(
@@ -201,7 +201,7 @@ def test_convert_view():
         Path("/tmp/model.yml"),
     )
 
-    naming_preset_enum = NamingPreset.DATASET_PREFIX
+    naming_preset_enum = NamingPreset.FULL
     dry_run = False
     debug = False
     logger = MagicMock()
@@ -228,7 +228,7 @@ def test_convert_view_not_a_view():
     # モックジェネレーターを作成
     mock_generator = MagicMock()
 
-    naming_preset_enum = NamingPreset.DATASET_PREFIX
+    naming_preset_enum = NamingPreset.FULL
     dry_run = False
     debug = False
     logger = MagicMock()
