@@ -1,5 +1,6 @@
 """BigQueryビューをdbtモデルにインポートするビジネスロジック"""
 import logging
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -10,6 +11,7 @@ from rich.table import Table
 from bq2dbt.converter.bigquery import BigQueryClient
 from bq2dbt.converter.dependency import DependencyResolver
 from bq2dbt.converter.generator import ModelGenerator
+from bq2dbt.utils.logger import setup_logging
 from bq2dbt.utils.naming import NamingPreset, generate_model_name
 
 
@@ -343,6 +345,7 @@ def display_conversion_results(
     skipped_views: Dict[str, str],
     dry_run: bool,
     console: Console,
+    logger: logging.Logger,
 ) -> None:
     """変換結果を表示します。
 
@@ -351,6 +354,7 @@ def display_conversion_results(
         skipped_views: スキップされたビューと理由の辞書
         dry_run: ドライランモードかどうか
         console: コンソールオブジェクト
+        logger: ロガーオブジェクト
     """
     if dry_run:
         console.print(
@@ -370,6 +374,9 @@ def display_conversion_results(
 
         for view, sql_path, yml_path in converted_models:
             table.add_row(view, str(sql_path), str(yml_path))
+            logger.info(f"  - {view}")
+            logger.info(f"    SQL: {sql_path}")
+            logger.info(f"    YAML: {yml_path}")
 
         console.print(table)
 
@@ -380,8 +387,99 @@ def display_conversion_results(
 
         for view, reason in skipped_views.items():
             table.add_row(view, reason)
-
+            logger.info(f"スキップされたビュー: {view}: {reason}")
         console.print(table)
+
+
+def _match_pattern(text: str, pattern: str) -> bool:
+    """簡易的なパターンマッチングを行います。
+
+    Args:
+        text: マッチング対象のテキスト
+        pattern: パターン（*をワイルドカードとして使用可能）
+
+    Returns:
+        マッチする場合はTrue、しない場合はFalse
+    """
+    # *をワイルドカードとして扱い、正規表現に変換
+    regex_pattern = pattern.replace("*", ".*")
+    return bool(re.match(f"^{regex_pattern}$", text))
+
+
+def filter_views(
+    views: List[str],
+    include_patterns: Optional[List[str]] = None,
+    exclude_patterns: Optional[List[str]] = None,
+    logger: Optional[logging.Logger] = None,
+) -> List[str]:
+    """ビュー一覧に対してinclude/excludeパターンによるフィルタリングを適用します。
+
+    Args:
+        views: フィルタリング対象のビュー名のリスト
+        include_patterns: 含めるビュー名のパターンリスト
+        exclude_patterns: 除外するビュー名のパターンリスト
+        logger: ロガーインスタンス
+
+    Returns:
+        フィルタリング後のビュー名のリスト
+    """
+    if not views:
+        return []
+
+    # パターンが指定されていない場合は全てのビューを返す
+    if not include_patterns and not exclude_patterns:
+        return views
+
+    filtered_views = []
+    for view in views:
+        # ビュー名の形式を確認（project.dataset.viewの形式であることを確認）
+        parts = view.split(".")
+        if len(parts) != 3:
+            if logger:
+                logger.warning(f"無効なビュー名形式: {view}")
+            continue
+
+        project, dataset, view_name = parts
+
+        # 含めるパターンによるフィルタリング
+        if include_patterns:
+            include_match = False
+            for pattern in include_patterns:
+                # パターンに"."が含まれている場合はFQN全体に対してマッチング
+                if "." in pattern:
+                    # FQN全体に対してパターンマッチング
+                    if _match_pattern(view, pattern):
+                        include_match = True
+                        break
+                else:
+                    # view部分のみに対してパターンマッチング（後方互換性のため）
+                    if _match_pattern(view_name, pattern):
+                        include_match = True
+                        break
+            if not include_match:
+                continue  # マッチしない場合はスキップ
+
+        # 除外パターンによるフィルタリング
+        if exclude_patterns:
+            exclude_match = False
+            for pattern in exclude_patterns:
+                # パターンに"."が含まれている場合はFQN全体に対してマッチング
+                if "." in pattern:
+                    # FQN全体に対してパターンマッチング
+                    if _match_pattern(view, pattern):
+                        exclude_match = True
+                        break
+                else:
+                    # view部分のみに対してパターンマッチング（後方互換性のため）
+                    if _match_pattern(view_name, pattern):
+                        exclude_match = True
+                        break
+            if exclude_match:
+                continue  # マッチする場合はスキップ
+
+        filtered_views.append(view)
+
+    return filtered_views
 
 
 def import_views(
@@ -419,11 +517,7 @@ def import_views(
         max_depth: 依存関係の最大深度
     """
     # ロギングの設定
-    logger = logging.getLogger("bq2dbt")
-    if debug:
-        logger.setLevel(logging.DEBUG)
-    else:
-        logger.setLevel(logging.INFO)
+    logger = setup_logging(verbose=debug)
 
     # コンソールの設定
     console = Console(highlight=False)
@@ -477,6 +571,14 @@ def import_views(
     added_views = [view for view in all_views if view not in views]
     if added_views:
         display_added_views(added_views, console)
+
+    # 依存関係で追加されたビューも含めて、フィルタリングを適用
+    if include_dependencies and (include_views or exclude_views):
+        logger.info("依存関係で追加されたビューにもフィルタリングを適用します")
+        ordered_views = filter_views(
+            ordered_views, include_views, exclude_views, logger
+        )
+        logger.info(f"フィルタリング後のビュー数: {len(ordered_views)}")
 
     # 変換順序の表示
     display_ordered_views(ordered_views, console)
@@ -543,4 +645,6 @@ def import_views(
             skipped_views[view] = f"エラー: {str(e)}"
 
     # 変換結果の表示
-    display_conversion_results(converted_models, skipped_views, dry_run, console)
+    display_conversion_results(
+        converted_models, skipped_views, dry_run, console, logger
+    )
