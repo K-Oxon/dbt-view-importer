@@ -6,11 +6,9 @@ import sys
 import click
 from rich.console import Console
 
+from bq2dbt import __version__
 from bq2dbt.commands.importer import import_cmd
 from bq2dbt.commands.logs import logs_cmd
-
-# バージョン情報
-__version__ = "0.1.0"
 
 # コンソール設定
 console = Console()
