@@ -1,47 +1,52 @@
 # dbt-view-importer
 
-BigQueryビューをdbtモデルに自動変換するツール。
+<!-- [![PyPI version](https://badge.fury.io/py/dbt-view-importer.svg)](https://badge.fury.io/py/dbt-view-importer) -->
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 
-## 概要
+A tool to automatically convert BigQuery views to dbt models.
 
-このツールは、指定したBigQueryデータセット内のビューを検出し、適切なdbtモデル（SQLファイルとYAMLファイル）に変換します。また、ビュー間の依存関係も解析し、変換順序を最適化します。主な機能は以下の通りです：
+## Overview
 
-- BigQueryデータセットからビューを自動検出
-- ビュー間の依存関係を解析（Data Catalog Lineage APIを使用）
-- 依存関係に基づいた最適な変換順序の決定
-- dbtモデル（SQLとYAML）の自動生成
-- カスタマイズ可能なテンプレートによるモデル生成
+This tool retrieves views from a specified BigQuery dataset and converts them into appropriate dbt models (SQL files and YAML files). It also allows you to include view dependencies in the retrieval. Key features include:
 
-## 注意点
+- Comprehensive view retrieval from specified BigQuery datasets
+- Dependency retrieval for views (using Data Catalog Lineage API)
+- Automatic generation of dbt models (SQL and YAML)
+- Model generation with customizable templates
+- View name filtering for imports
 
-- Lineageの取得ができない場合があり、少し時間を置くと解決するかもしれません
+## Important Note
 
-## インストール
+> ⚠️ In some cases, lineage information may not be retrievable immediately. If you encounter issues, waiting a short time and trying again may resolve the problem.
 
-### 前提条件
+## Installation
 
-- Python 3.9以上
-- Google Cloud認証済み環境（BigQueryとData Catalog Lineage APIへのアクセス権限が必要）
+### Prerequisites
 
-### インストール手順
+- Python 3.9 or higher
+- Authenticated Google Cloud environment (access to BigQuery and Data Catalog Lineage API)
+
+### Installation Options
 
 ```bash
+# Install from GitHub
 pip install git+https://github.com/K-Oxon/dbt-view-importer.git
 ```
 
-## 使用方法
+## Usage
 
-### コマンドの基本構造
+### Basic Command Structure
 
 ```bash
-bq2dbt [コマンド] [オプション]
+bq2dbt [command] [options]
 ```
 
-### 主要コマンド
+### Main Commands
 
-#### ビューのインポート
+#### Importing Views
 
-##### 基本的な使用方法（必須オプションのみ）
+##### Basic Usage (Required Options Only)
 
 ```bash
 bq2dbt import views \
@@ -50,7 +55,7 @@ bq2dbt import views \
   --output-dir <OUTPUT_DIR>
 ```
 
-##### 全オプションを使用した例
+##### Example with All Options
 
 ```bash
 bq2dbt import views \
@@ -71,107 +76,107 @@ bq2dbt import views \
   --debug
 ```
 
-##### オプションの詳細
+##### Option Details
 
-###### 必須オプション
+###### Required Options
 
 - `--project-id <PROJECT_ID>`
-  - BigQueryプロジェクトID
-  - 例: `--project-id my-gcp-project`
+  - BigQuery project ID
+  - Example: `--project-id my-gcp-project`
 
 - `--dataset <DATASET_ID>`
-  - インポート対象のBigQueryデータセット
-  - 例: `--dataset my_dataset`
+  - Target BigQuery dataset for import
+  - Example: `--dataset my_dataset`
 
 - `--output-dir <OUTPUT_DIR>`
-  - dbtモデルの出力先ディレクトリ
-  - 例: `--output-dir models/staging`
+  - Output directory for dbt models
+  - Example: `--output-dir models/staging`
 
-###### 命名規則オプション
+###### Naming Options
 
 - `--naming-preset <PRESET>`
-  - モデル命名規則のプリセット
-  - 選択肢: `full`（デフォルト）, `table_only`, `dataset_without_prefix`
-  - `table_only`: テーブル名のみを使用（例: `sales.revenue` → `revenue.sql`）
-  - `full`: データセット名とテーブル名を使用（例: `sales.revenue` → `sales__revenue.sql`）
-  - `dataset_without_prefix`: データセットからプレフィックスを除去しテーブル名と`__`で結合（例: `dm_sales.revenue` → `sales__revenue.sql`）
+  - Model naming convention preset
+  - Choices: `full` (default), `table_only`, `dataset_without_prefix`
+  - `table_only`: Uses only the table name (e.g., `sales.revenue` → `revenue.sql`)
+  - `full`: Uses dataset and table name (e.g., `sales.revenue` → `sales__revenue.sql`)
+  - `dataset_without_prefix`: Removes prefix from dataset and combines with table name using `__` (e.g., `dm_sales.revenue` → `sales__revenue.sql`)
 
-###### フィルタリングオプション
+###### Filtering Options
 
 - `--include-views <PATTERNS>`
-  - インポート対象のビュー名パターン（カンマ区切り）
-  - 例: `--include-views "*.sample_dataset.*,mart_*"`
+  - View name patterns to include (comma-separated)
+  - Example: `--include-views "*.sample_dataset.*,mart_*"`
 
 - `--exclude-views <PATTERNS>`
-  - インポート対象から除外するビュー名パターン（カンマ区切り）
-  - 例: `--exclude-views "*.temp_dataset.*,test_*"`
+  - View name patterns to exclude (comma-separated)
+  - Example: `--exclude-views "*.temp_dataset.*,test_*"`
 
 - `--non-interactive`
-  - インタラクティブな確認をスキップするフラグ
-  - 指定すると、ユーザーに確認せずに全てのビューを変換
+  - Flag to skip interactive confirmations
+  - When specified, all views are converted without user confirmation
 
-###### 依存関係オプション
+###### Dependency Options
 
 - `--include-dependencies`
-  - 依存関係にあるビューも含めてインポートするフラグ
-  - 指定すると、選択したビューが依存する他のビューも自動的にインポート
+  - Flag to include dependent views in the import
+  - When specified, other views that selected views depend on are automatically imported
 
 - `--max-depth <DEPTH>`
-  - 依存関係の最大深度（`--include-dependencies`使用時）
-  - デフォルト: 3
-  - 例: `--max-depth 5`（より深い依存関係まで取得）
+  - Maximum depth of dependencies (when using `--include-dependencies`)
+  - Default: 3
+  - Example: `--max-depth 5` (retrieves deeper dependencies)
 
-###### テンプレートオプション
+###### Template Options
 
 - `--sql-template <TEMPLATE_FILE>`
-  - SQLモデル用のJinja2テンプレートファイル
-  - 指定しない場合はデフォルトテンプレートを使用
-  - 例: `--sql-template templates/custom_model.sql`
+  - Jinja2 template file for SQL models
+  - Uses default template if not specified
+  - Example: `--sql-template templates/custom_model.sql`
 
 - `--yml-template <TEMPLATE_FILE>`
-  - YAMLモデル用のJinja2テンプレートファイル
-  - 指定しない場合はデフォルトテンプレートを使用
-  - 例: `--yml-template templates/custom_model.yml`
+  - Jinja2 template file for YAML models
+  - Uses default template if not specified
+  - Example: `--yml-template templates/custom_model.yml`
 
 - `--yml-prefix <PREFIX_STRING>`
-  - ymlファイルの接頭辞を指定する
-  - 例: `--yml-prefix _` -> `_model_name.yml`が生成される
+  - Specifies a prefix for yml files
+  - Example: `--yml-prefix _` -> generates `_model_name.yml`
 
-###### 実行オプション
+###### Execution Options
 
 - `--dry-run`
-  - 実際にファイルを作成せずに実行するフラグ
-  - 指定すると、変換対象のビューと出力先を表示するのみ
+  - Flag to run without creating files
+  - When specified, only displays target views and output destinations
 
 - `--location <LOCATION>`
-  - BigQueryのロケーション
-  - デフォルト: `asia-northeast1`
-  - 例: `--location us-central1`
+  - BigQuery location
+  - Default: `asia-northeast1`
+  - Example: `--location us-central1`
 
 - `--debug`
-  - デバッグモードを有効化するフラグ
-  - 指定すると、より詳細なログ情報を表示
+  - Flag to enable debug mode
+  - When specified, displays more detailed log information
 
-#### ログの表示
+#### Viewing Logs
 
 ```bash
-# 最近のログ一覧を表示
+# Display a list of recent logs
 bq2dbt logs list
 
-# 最新のログを表示
+# Display the most recent log
 bq2dbt logs show --last
 ```
 
-### インタラクティブモード
+### Interactive Mode
 
-デフォルトでは、ツールはインタラクティブモードで実行され、以下の確認を行います：
+By default, the tool runs in interactive mode, which includes the following confirmations:
 
-1. 検出されたビューの一覧表示
-2. 依存関係の分析と表示
-3. 各ビューのインポート確認
-4. 既存ファイルの上書き確認
+1. Display of detected views
+2. Analysis and display of dependencies
+3. Confirmation for importing each view
+4. Confirmation for overwriting existing files
 
-非インタラクティブモードを使用する場合は、`--non-interactive`オプションを指定します：
+To use non-interactive mode, specify the `--non-interactive` option:
 
 ```bash
 bq2dbt import views \
@@ -181,13 +186,13 @@ bq2dbt import views \
   --non-interactive
 ```
 
-### テンプレートのカスタマイズ
+### Template Customization
 
-dbt-view-importerは、SQLモデルとYAMLモデルの生成に使用するテンプレートをカスタマイズすることができます。これにより、組織固有の命名規則やdbt設定を適用できます。
+dbt-view-importer allows you to customize templates used for generating SQL and YAML models. This enables you to apply organization-specific naming conventions and dbt settings.
 
-#### デフォルトテンプレート
+#### Default Templates
 
-##### SQLモデルテンプレート（model.sql）
+##### SQL Model Template (model.sql)
 
 ```sql
 -- dbt model configuration
@@ -203,7 +208,7 @@ dbt-view-importerは、SQLモデルとYAMLモデルの生成に使用するテ�
 {{ sql_definition }}
 ```
 
-##### YAMLモデルテンプレート（model.yml）
+##### YAML Model Template (model.yml)
 
 ```yaml
 version: 2
@@ -220,25 +225,25 @@ models:
 {%- endfor %}
 ```
 
-#### カスタムテンプレートの作成
+#### Creating Custom Templates
 
-独自のテンプレートを作成する場合は、以下の変数を使用できます：
+When creating your own templates, you can use the following variables:
 
-##### SQLテンプレートで使用可能な変数
+##### Variables Available in SQL Templates
 
-- `{{ source_view }}`: 元のBigQueryビューの完全修飾名（例: `project.dataset.view_name`）
-- `{{ timestamp }}`: 生成時のタイムスタンプ
-- `{{ sql_definition }}`: BigQueryビューのSQL定義
+- `{{ source_view }}`: Fully qualified name of the original BigQuery view (e.g., `project.dataset.view_name`)
+- `{{ timestamp }}`: Timestamp of generation
+- `{{ sql_definition }}`: SQL definition of the BigQuery view
 
-##### YAMLテンプレートで使用可能な変数
+##### Variables Available in YAML Templates
 
-- `{{ model_name }}`: dbtモデル名
-- `{{ description }}`: ビューの説明
-- `{{ columns }}`: カラム情報のリスト（各カラムは `name` と `description` 属性を持つ）
+- `{{ model_name }}`: dbt model name
+- `{{ description }}`: View description
+- `{{ columns }}`: List of column information (each column has `name` and `description` attributes)
 
-#### カスタムテンプレートの例
+#### Custom Template Examples
 
-##### カスタムSQLテンプレート例
+##### Custom SQL Template Example
 
 ```sql
 -- dbt model configuration
@@ -258,7 +263,7 @@ models:
 {{ sql_definition }}
 ```
 
-##### カスタムYAMLテンプレート例
+##### Custom YAML Template Example
 
 ```yaml
 version: 2
@@ -280,9 +285,9 @@ models:
 {%- endfor %}
 ```
 
-#### テンプレートの使用方法
+#### Using Templates
 
-カスタムテンプレートを使用するには、`--sql-template` と `--yml-template` オプションでテンプレートファイルのパスを指定します：
+To use custom templates, specify the paths to the template files with the `--sql-template` and `--yml-template` options:
 
 ```bash
 bq2dbt import views \
@@ -293,9 +298,9 @@ bq2dbt import views \
   --yml-template path/to/custom_model.yml
 ```
 
-### デバッグモード
+### Debug Mode
 
-より詳細な情報を表示するデバッグモードを使用することができます：
+You can use debug mode to display more detailed information:
 
 ```bash
 bq2dbt import views \
@@ -305,90 +310,90 @@ bq2dbt import views \
   --debug
 ```
 
-## 開発者向け情報
+## Developer Information
 
-### cloneとインストール
+### Clone and Installation
 
 ```bash
-# リポジトリをクローン
+# Clone the repository
 git clone https://github.com/K-Oxon/dbt-view-importer.git
 cd dbt-view-importer
 
-# uvを使って開発モードでインストール
+# Install in development mode using uv
 uv sync
 ```
 
-### テストの実行
+### Running Tests
 
 ```bash
-# すべてのテストを実行
+# Run all tests
 ./scripts/run_tests.sh
 
-# BigQuery連携テストも実行（環境変数の設定が必要）
+# Run tests with BigQuery integration (environment variables required)
 export BQ_PROJECT_ID=your-project
 export BQ_DATASET_ID=your_dataset
 ./scripts/run_tests.sh --with-bq
 
-# 特定のテストを実行
+# Run specific tests
 ./scripts/run_tests.sh "" tests/converter/test_generator.py
 ```
 
-### デバッグ用インポート
+### Debug Import
 
 ```bash
-# 環境変数の設定
+# Set environment variables
 export BQ_PROJECT_ID=your-project
 export BQ_DATASET_ID=your_dataset
 
-# デバッグモードでインポート実行
+# Run import in debug mode
 ./scripts/debug_import.sh output_dir
 ```
 
-## プロジェクト構造
+## Project Structure
 
 ```
 src/bq2dbt/
-├── cli.py                # CLIエントリーポイント
-├── commands/             # コマンド定義
-│   ├── importer.py       # インポートコマンドグループ
-│   ├── import_views.py   # ビューインポートコマンド
-│   └── logs.py           # ログコマンド
-├── converter/            # 変換ロジック
-│   ├── bigquery.py       # BigQueryクライアント
-│   ├── dependency.py     # 依存関係解析
-│   ├── generator.py      # モデル生成
-│   ├── importer.py       # インポートビジネスロジック
-│   └── lineage.py        # Lineage API連携
-├── templates/            # テンプレート
-│   ├── model.sql         # SQLモデルテンプレート
-│   └── model.yml         # YAMLモデルテンプレート
-└── utils/                # ユーティリティ
-    ├── logging.py        # ロギング
-    └── naming.py         # 命名規則
+├── cli.py                # CLI entry point
+├── commands/             # Command definitions
+│   ├── importer.py       # Import command group
+│   ├── import_views.py   # View import command
+│   └── logs.py           # Log command
+├── converter/            # Conversion logic
+│   ├── bigquery.py       # BigQuery client
+│   ├── dependency.py     # Dependency analysis
+│   ├── generator.py      # Model generation
+│   ├── importer.py       # Import business logic
+│   └── lineage.py        # Lineage API integration
+├── templates/            # Templates
+│   ├── model.sql         # SQL model template
+│   └── model.yml         # YAML model template
+└── utils/                # Utilities
+    ├── logging.py        # Logging
+    └── naming.py         # Naming conventions
 ```
 
-## アーキテクチャ
+## Architecture
 
-このツールは以下のコンポーネントで構成されています：
+This tool consists of the following components:
 
-### コマンドレイヤー
-- `commands/importer.py`: インポートコマンドグループを定義
-- `commands/import_views.py`: ビューインポートコマンドを定義
-- `commands/logs.py`: ログ表示コマンドを定義
+### Command Layer
+- `commands/importer.py`: Defines the import command group
+- `commands/import_views.py`: Defines the view import command
+- `commands/logs.py`: Defines the log display command
 
-### ビジネスロジックレイヤー
-- `converter/importer.py`: インポート処理のビジネスロジックを実装
-- `converter/bigquery.py`: BigQueryとの連携機能を提供
-- `converter/lineage.py`: Data Catalog Lineage APIとの連携機能を提供
-- `converter/dependency.py`: 依存関係解析機能を提供
-- `converter/generator.py`: dbtモデル生成機能を提供
+### Business Logic Layer
+- `converter/importer.py`: Implements import processing business logic
+- `converter/bigquery.py`: Provides integration with BigQuery
+- `converter/lineage.py`: Provides integration with Data Catalog Lineage API
+- `converter/dependency.py`: Provides dependency analysis functionality
+- `converter/generator.py`: Provides dbt model generation functionality
 
-### ユーティリティレイヤー
-- `utils/naming.py`: 命名規則関連のユーティリティを提供
-- `utils/logging.py`: ロギング機能を提供
+### Utility Layer
+- `utils/naming.py`: Provides naming convention utilities
+- `utils/logging.py`: Provides logging functionality
 
-この階層化されたアーキテクチャにより、ビジネスロジックとユーザーインターフェースが明確に分離され、コードの保守性と拡張性が向上しています。
+This layered architecture clearly separates business logic from the user interface, improving code maintainability and extensibility.
 
-## ライセンス
+## License
 
-このプロジェクトはMITライセンスの下で公開されています。
+This project is released under the MIT License.
