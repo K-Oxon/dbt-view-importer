@@ -57,4 +57,7 @@ module = "tests.*"
 disallow_untyped_defs = false
 
 [dependency-groups]
-dev = ["jupyter>=1.1.1", "mypy>=1.15.0", "pytest>=7.4.4"]
+dev = ["mypy>=1.15.0", "pytest>=7.4.4"]
+
+[tool.uv]
+exclude-newer = "7 days"
