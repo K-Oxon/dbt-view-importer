@@ -2,7 +2,7 @@
 
 <!-- [![PyPI version](https://badge.fury.io/py/dbt-view-importer.svg)](https://badge.fury.io/py/dbt-view-importer) -->
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
 BigQueryビューをdbtモデルに自動変換するツール。
 
@@ -24,7 +24,7 @@ BigQueryビューをdbtモデルに自動変換するツール。
 
 ### 前提条件
 
-- Python 3.9以上
+- Python 3.10以上
 - Google Cloud認証済み環境（BigQueryとData Catalog Lineage APIへのアクセス権限が必要）
 
 ### インストール手順

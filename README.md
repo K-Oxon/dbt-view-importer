@@ -2,7 +2,7 @@
 
 <!-- [![PyPI version](https://badge.fury.io/py/dbt-view-importer.svg)](https://badge.fury.io/py/dbt-view-importer) -->
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
 A tool to automatically convert BigQuery views to dbt models.
 
@@ -24,7 +24,7 @@ This tool retrieves views from a specified BigQuery dataset and converts them in
 
 ### Prerequisites
 
-- Python 3.9 or higher
+- Python 3.10 or higher
 - Authenticated Google Cloud environment (access to BigQuery and Data Catalog Lineage API)
 
 ### Installation Options
