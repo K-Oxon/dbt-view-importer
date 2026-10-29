@@ -14,10 +14,13 @@ def test_import_cmd_group():
     assert "インポートするコマンド" in result.output
 
 
+@patch("bq2dbt.converter.importer.setup_logging")
 @patch("bq2dbt.converter.importer.BigQueryClient")
 @patch("bq2dbt.converter.importer.ModelGenerator")
 @patch("bq2dbt.converter.importer.DependencyResolver")
-def test_import_views_command(mock_resolver, mock_generator, mock_bq_client):
+def test_import_views_command(
+    mock_resolver, mock_generator, mock_bq_client, mock_setup_logging
+):
     """インポートビューコマンドのテスト（基本機能と主要オプション）"""
     # モックの設定
     mock_bq_instance = MagicMock()
